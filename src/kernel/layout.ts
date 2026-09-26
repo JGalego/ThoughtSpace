@@ -3,6 +3,9 @@
 import type { ObjectId, SemanticPlacement, TSObject, VisualState, Workspace } from './types';
 
 const GAP = 36;
+/** where rows of unanchored objects start, and how wide they may grow before wrapping */
+const ROW_START = 80;
+const ROW_WIDTH = 1400;
 
 interface Rect {
   x: number;
@@ -53,6 +56,14 @@ export function place(
       : undefined;
 
   if (!a) return nearestFree({ x: 80, y: 80, w, h }, taken, 'below');
+
+  // Unanchored objects created in a row wrap like text once the row is wider than a
+  // screen, so a lesson built in one go stays readable without panning.
+  if (!anchor && a.x + a.w + GAP + w > ROW_START + ROW_WIDTH) {
+    const rowStart = Math.min(ROW_START, ...pending.map((r) => r.x));
+    const bottom = Math.max(...taken.filter((r) => r.x < rowStart + ROW_WIDTH).map((r) => r.y + r.h));
+    return nearestFree({ x: rowStart, y: bottom + GAP, w, h }, taken, 'right');
+  }
 
   const dir: 'right' | 'below' | 'above' | 'left' =
     placement && 'below' in placement ? 'below' : placement && 'above' in placement ? 'above' : placement && 'left_of' in placement ? 'left' : 'right';

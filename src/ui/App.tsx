@@ -16,6 +16,8 @@ const SETTINGS = 'thoughtspace.settings.v2';
 const DISMISSED = 'thoughtspace.dismissed.v1';
 
 const kernel = new Kernel();
+// a handle for scripted demos and debugging in the browser console
+if (import.meta.env.DEV) (window as unknown as { thoughtspace: Kernel }).thoughtspace = kernel;
 kernel.load(localStorage.getItem(STORE) ?? '');
 
 function readJSON<T>(key: string, fallback: T): T {

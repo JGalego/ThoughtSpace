@@ -1,13 +1,13 @@
 // Renderers: pure projections of semantic objects. One per kind; the frame around them is generic.
 
 import { useEffect, useMemo, useState, type JSX } from 'react';
-import katex from 'katex';
 import {
   ACTIVATIONS,
   arithmeticLatex,
   boundaryLatex,
   datasetFor,
   describeArchitecture,
+  fmt,
   formatValue,
   kindSpec,
   layersOf,
@@ -26,6 +26,8 @@ import {
   type Workspace,
 } from '../kernel';
 import { useUI } from './context';
+import { Tex } from './tex';
+import { CalcExperimentView, CalcGraph, calcGlance, calcMetrics, FormulaView, SystemView, TrialsView, VariableView } from './calc';
 import { BoundaryPlot, LineChart, Spark } from './viz';
 import { NetworkView, networkGlance } from './network';
 
@@ -64,6 +66,7 @@ function GraphView({ o }: { o: TSObject }) {
   const ui = useUI();
   const src = sourceOf(ui.ws, o.id);
   const w = o.visual.w - 20;
+  if (['curve', 'series', 'histogram'].includes(o.params.mode as string)) return <CalcGraph o={o} />;
   if (!src) return <div className="muted small">Not connected. Drag from a network's port onto this plot.</div>;
   const mode = o.params.mode as string;
 
@@ -146,16 +149,7 @@ function FunctionView({ o }: { o: TSObject }) {
 
 // ------------------------------------------------------------------ equation
 
-export function Tex({ latex, display = true }: { latex: string; display?: boolean }) {
-  const html = useMemo(() => {
-    try {
-      return katex.renderToString(latex, { displayMode: display, throwOnError: false });
-    } catch {
-      return latex;
-    }
-  }, [latex, display]);
-  return <div className="eq" dangerouslySetInnerHTML={{ __html: html }} />;
-}
+export { Tex };
 
 export function equationLatex(o: TSObject, ws: Workspace): { latex: string; caption?: string } {
   const form = o.params.form as string;
@@ -276,6 +270,11 @@ function SimulationView({ o }: { o: TSObject }) {
 // ------------------------------------------------------------------ experiment
 
 function ExperimentView({ o }: { o: TSObject }) {
+  if (o.state.mode === 'calc') return <CalcExperimentView o={o} />;
+  return <NetworkExperimentView o={o} />;
+}
+
+function NetworkExperimentView({ o }: { o: TSObject }) {
   const ui = useUI();
   const s = o.state;
   const reps = (s.reproductions ?? []) as { match: boolean; hash: string }[];
@@ -361,7 +360,15 @@ function ComparisonView({ o }: { o: TSObject }) {
             </div>
           </>
         )}
-        {x.kind !== 'neural_network' && <pre className="json">{JSON.stringify(kindSpec(x.kind)!.summarize(x, ui.ws), null, 1).slice(0, 400)}</pre>}
+        {x.kind !== 'neural_network' && calcMetrics(ui.ws, x) && (
+          <div className="kv" style={{ marginTop: 4 }}>
+            {Object.entries(calcMetrics(ui.ws, x)!).slice(0, 12).flatMap(([k, v]) => {
+              const ov = calcMetrics(ui.ws, other)?.[k];
+              return [<span key={`${k}-k`}>{k}</span>, <span key={`${k}-v`} className={ov !== undefined && Math.abs(ov - v) > 1e-9 * Math.max(1, Math.abs(v)) ? 'diff mono' : 'mono'}>{fmt(v, 4)}</span>];
+            })}
+          </div>
+        )}
+        {x.kind !== 'neural_network' && !calcMetrics(ui.ws, x) && <pre className="json">{JSON.stringify(kindSpec(x.kind)!.summarize(x, ui.ws), null, 1).slice(0, 400)}</pre>}
       </div>
     );
   };
@@ -379,10 +386,32 @@ function ClaimView({ o }: { o: TSObject }) {
   const ui = useUI();
   const s = o.state;
   const ev = (s.evidence as string[]).map((id) => ui.ws.objects[id]).filter(Boolean);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(s.text);
+  useEffect(() => setDraft(s.text), [s.text]);
   return (
-    <div>
+    <div onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="double-click to write your prediction">
       <span className={`claim-status ${s.status}`}>{s.status === 'supported' ? '✓ supported' : s.status === 'refuted' ? '✗ refuted' : '? unverified'}</span>
-      <div className="claim-text">{s.text}</div>
+      {editing ? (
+        <textarea
+          className="claim-edit"
+          autoFocus
+          value={draft}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            setEditing(false);
+            if (draft.trim() && draft !== s.text) ui.act([{ op: 'modify_object', id: o.id, state: { text: draft.trim() } }]);
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && !e.shiftKey) (e.target as HTMLTextAreaElement).blur();
+            if (e.key === 'Escape') setDraft(s.text), setEditing(false);
+          }}
+        />
+      ) : (
+        <div className="claim-text">{s.text}</div>
+      )}
       <div className="small muted">
         {ev.length ? (
           <>evidence: {ev.map((e) => <span key={e.id} className="link" onClick={() => ui.select([e.id])}>{e.label}</span>)}</>
@@ -506,4 +535,8 @@ export const RENDERERS: Record<string, Renderer> = {
   claim: { body: ClaimView },
   group: { body: GroupView },
   glyph: { body: GlyphView, glance: (o) => <><b>◆</b>{o.label}</> },
+  variable: { body: VariableView, glance: calcGlance.variable },
+  formula: { body: FormulaView, glance: calcGlance.formula },
+  system: { body: SystemView, glance: calcGlance.system },
+  trials: { body: TrialsView, glance: calcGlance.trials },
 };

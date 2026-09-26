@@ -85,7 +85,7 @@ export const OPS: OpDoc[] = [
   { op: 'execute', summary: 'train a network deterministically (creates/updates a training-run object)', args: '{id, ref?} (ref names the training run)' },
   { op: 'plot', summary: 'create a graph visualizing an object', args: '{source (id or list of formula ids), mode?, x?, y?, from?, to?, weight?, placement?, ref?}' },
   { op: 'zoom_into', summary: 'semantic zoom: a linked equation one level down', args: '{id, form: "neuron"|"boundary"|"network"|"arithmetic", focus?: "L:J", input?: "x1,x2", ref?}' },
-  { op: 'experiment', summary: 'run a controlled, reproducible experiment on a network', args: '{target, hypothesis: {text, expect?: [{value?, metric, op, threshold}]}, variable: {param: hidden|activation|learningRate|epochs, values}, seeds?, ref?} — each expectation compares the metric of one value with a threshold or with another value (than); metric: success_rate|mean_final_loss|best_accuracy|mean_accuracy|mean_converged_at|mean_grad_norm; op: < <= > >= ==. Without expectations an experiment is inconclusive and cannot verify claims' },
+  { op: 'experiment', summary: 'run a controlled, reproducible experiment on a network, or on a formula/system/trials (see OPEN LESSONS)', args: '{target, hypothesis: {text, expect?: [{value?, metric, op, threshold}]}, variable: {param: hidden|activation|learningRate|epochs, values}, seeds?, ref?} — each expectation compares the metric of one value with a threshold or with another value (than); metric: success_rate|mean_final_loss|best_accuracy|mean_accuracy|mean_converged_at|mean_grad_norm; op: < <= > >= ==. Without expectations an experiment is inconclusive and cannot verify claims' },
   { op: 'reproduce', summary: 're-run an experiment and check its results hash', args: '{id}' },
   { op: 'branch', summary: 'fork objects into an explicit alternative with a stated assumption', args: '{ids, assumption, changes?: [{id, param, value} | {id, action, args}], execute?, label?, ref?}' },
   { op: 'compare', summary: 'create a live comparison of two objects', args: '{a, b, placement?, ref?}' },
@@ -832,7 +832,7 @@ const HANDLERS: Record<string, Handler> = {
       const { params: p, label } = calcPlotParams(tx, sources, op);
       const params = coerceParams('graph', p);
       const id = tx.newId('plot');
-      const big = params.mode === 'curve' || params.mode === 'series';
+      const big = ['curve', 'series', 'histogram'].includes(params.mode as string);
       tx.createObject(
         {
           id,

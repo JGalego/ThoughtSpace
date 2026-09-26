@@ -422,9 +422,13 @@ const FN_TEX: Record<string, string> = { sin: '\\sin', cos: '\\cos', tan: '\\tan
 
 export function nameTex(n: string): string {
   if (n === 'pi' || n === 'π') return '\\pi';
-  const [head, ...rest] = n.split('_');
+  const [whole, ...rest] = n.split('_');
+  // v0 → v₀, x12 → x₁₂: trailing digits read as a subscript
+  const m = /^([^\d]+)(\d+)$/.exec(whole);
+  const head = m && !rest.length ? m[1] : whole;
+  if (m && !rest.length) rest.push(m[2]);
   const base = GREEK.has(head) ? `\\${head}` : head.length === 1 ? head : `\\mathrm{${head}}`;
-  return rest.length ? `${base}_{\\mathrm{${rest.join('\\_')}}}` : base;
+  return rest.length ? `${base}_{${/^\d+$/.test(rest.join('')) ? rest.join('') : `\\mathrm{${rest.join('\\_')}}`}}` : base;
 }
 
 function prec(a: Ast): number {

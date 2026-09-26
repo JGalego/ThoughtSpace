@@ -111,6 +111,15 @@ export function TopBar({
   const depth = (id: string): number => (k.branches[id].parent ? 1 + depth(k.branches[id].parent!) : 0);
   const ordered = Object.values(k.branches).sort((a, b) => a.createdAt - b.createdAt);
 
+  const names = new Set(Object.values(ui.ws.objects).flatMap((o) => (o.state?.name ? [String(o.state.name)] : [])));
+  const fresh = (pool: string[]) => pool.find((n) => !names.has(n)) ?? `${pool[0]}${names.size}`;
+  const firstVar = () => Object.values(ui.ws.objects).find((o) => o.kind === 'variable' && !o.visual.hidden)?.state.name as string | undefined;
+  const createCalc = (kind: string, args: Record<string, unknown>) => {
+    const c = ui.viewportCenter();
+    const r = ui.act([{ op: 'create_object', kind, ...args, placement: { around: { x: Math.round(c.x), y: Math.round(c.y) } } }]);
+    if (r.ok) ui.select(r.created.slice(0, 1));
+    setPop(null);
+  };
   const create = (kind: string, params?: Record<string, unknown>) => {
     const c = ui.viewportCenter();
     ui.act([{ op: 'create_object', kind, ...(params ? { params } : {}), placement: { around: { x: Math.round(c.x), y: Math.round(c.y) } } }]);
@@ -176,7 +185,14 @@ export function TopBar({
         <button className="tb-btn" onClick={() => toggle('add')}>+ Object</button>
         {pop === 'add' && (
           <div className="pop" style={{ left: 0 }}>
+            <h4>Open lesson</h4>
+            <div className="item" onClick={() => createCalc('variable', { name: fresh(['a', 'b', 'c', 'k', 'm', 'r', 's']), value: 1, min: 0, max: 10 })}>Variable <span className="small muted">a slider</span></div>
+            <div className="item" onClick={() => createCalc('formula', { name: fresh(['y', 'f', 'g', 'h', 'z']), expr: firstVar() ? `2*${firstVar()}` : '1 + 1' })}>Formula <span className="small muted">double-click to edit</span></div>
+            <div className="item" onClick={() => createCalc('system', { name: fresh(['growth', 'model', 'system']), vars: [{ name: fresh(['N', 'P', 'Q']), init: '1', rate: `0.5*${fresh(['N', 'P', 'Q'])}` }], t_max: 10 })}>System <span className="small muted">rates of change over time</span></div>
+            <div className="item" onClick={() => createCalc('trials', { name: fresh(['X', 'Y', 'W']), expr: 'randint(1, 6) + randint(1, 6)', trials: 2000 })}>Random trials <span className="small muted">repeat a chance event</span></div>
+            <div className="item" onClick={() => { const c = ui.viewportCenter(); ui.act([{ op: 'claim', text: 'My prediction: …', about: ui.selection, placement: { around: { x: Math.round(c.x), y: Math.round(c.y) } } }]); setPop(null); }}>Prediction <span className="small muted">double-click to write it</span></div>
             <div className="item" onClick={() => create('text')}>Note</div>
+            <h4>Neural networks</h4>
             <div className="item" onClick={() => create('dataset', { preset: 'xor' })}>Dataset</div>
             <div className="item" onClick={() => create('neural_network')}>Neural network</div>
             <div className="item" onClick={() => create('function')}>Function</div>
