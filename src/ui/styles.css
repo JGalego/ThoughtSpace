@@ -230,3 +230,10 @@ svg.sketch.hi { animation: inkhi 1.6s ease-in-out 3; }
 .swatch { width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 1px var(--line-2); cursor: pointer; padding: 0; margin: 0 2px; }
 .swatch.on { box-shadow: 0 0 0 2px var(--ink); }
 .pen-hint { font-size: 11.5px; color: var(--ink-3); padding: 0 8px; white-space: nowrap; }
+
+/* network controls: layer/unit buttons may shrink, Train never does */
+.net-controls { flex-wrap: nowrap; }
+.net-controls > .row:first-child { gap: 3px; min-width: 0; overflow: hidden; }
+.net-controls > .row:last-child { flex: none; }
+.net-controls .btn.icon { padding: 2px 5px; }
+.net-controls select.inline { max-width: 72px; }

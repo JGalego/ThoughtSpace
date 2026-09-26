@@ -246,7 +246,9 @@ export type SemanticPlacement =
   | { above: ObjectId }
   | { left_of: ObjectId }
   | { near: ObjectId }
-  | { at: { x: number; y: number } };
+  | { at: { x: number; y: number } }
+  /** the nearest free spot to a point (the human's viewport centre, say) */
+  | { around: { x: number; y: number } };
 
 export type Operation = { op: string; [k: string]: any };
 

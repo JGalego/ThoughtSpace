@@ -113,7 +113,7 @@ export function TopBar({
 
   const create = (kind: string, params?: Record<string, unknown>) => {
     const c = ui.viewportCenter();
-    ui.act([{ op: 'create_object', kind, ...(params ? { params } : {}), placement: { at: { x: Math.round(c.x - 140), y: Math.round(c.y - 100) } } }]);
+    ui.act([{ op: 'create_object', kind, ...(params ? { params } : {}), placement: { around: { x: Math.round(c.x), y: Math.round(c.y) } } }]);
     setPop(null);
   };
 
@@ -195,7 +195,7 @@ export function TopBar({
                 className="item"
                 onClick={() => {
                   const c = ui.viewportCenter();
-                  ui.act([{ op: 'instantiate_glyph', definition: g.id, placement: { at: { x: Math.round(c.x - 130), y: Math.round(c.y - 120) } } }]);
+                  ui.act([{ op: 'instantiate_glyph', definition: g.id, placement: { around: { x: Math.round(c.x), y: Math.round(c.y) } } }]);
                   setPop(null);
                 }}
               >

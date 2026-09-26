@@ -380,7 +380,11 @@ const INTENTS: Intent[] = [
       const r = c.apply([{ op: 'plot', source: net.id, mode: 'weight_sweep', weight: w, ref: 'p' }], `sensitivity of w${w}`);
       if (r.ok) {
         c.host.highlight([`${net.id}#edge:${w}`, r.refs.p]);
-        c.host.say(`The most sensitive weight is w${w} (Δloss ${s.score.toFixed(2)} for a ±0.5 nudge${s.accuracyFlips ? ', enough to change a prediction' : ''}). The plot sweeps it and shows loss and accuracy as it moves.`);
+        c.host.say(
+          s.score < 0.02 && !s.accuracyFlips
+            ? `Nothing here is fragile: nudging any weight by ±0.5 changes the loss by at most ${s.score.toFixed(3)}. The plot sweeps the most sensitive one, w${w}, over a wider range so you can see where it would start to matter.`
+            : `The most sensitive weight is w${w} (Δloss ${s.score.toFixed(2)} for a ±0.5 nudge${s.accuracyFlips ? ', enough to change a prediction' : ''}). The plot sweeps it and shows loss and accuracy as it moves.`,
+        );
       }
     },
   },

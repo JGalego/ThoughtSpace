@@ -192,13 +192,13 @@ export class TxBuilder {
     }
     if (typeof p !== 'object') return fail('placement: expected an object like {"beside": "net_1"}');
     const entries = Object.entries(p as object).map(([k, v]) => [PLACEMENT_ALIASES[k] ?? k, v] as const);
-    const known = entries.filter(([k]) => ['beside', 'below', 'above', 'left_of', 'near', 'at'].includes(k));
+    const known = entries.filter(([k]) => ['beside', 'below', 'above', 'left_of', 'near', 'at', 'around'].includes(k));
     if (known.length === 0) return fail(`placement: use one of beside/below/above/left_of/near (got ${entries.map(([k]) => k).join(', ') || 'nothing'})`);
     const [k, v] = known[0];
-    if (k === 'at') {
+    if (k === 'at' || k === 'around') {
       if (this.actor === 'ai') return fail('placement: the agent places objects semantically (beside/below/…), not by coordinates');
-      if (typeof v?.x !== 'number' || typeof v?.y !== 'number') return fail('placement.at: expected {x, y}');
-      return { at: { x: v.x, y: v.y } };
+      if (typeof v?.x !== 'number' || typeof v?.y !== 'number') return fail(`placement.${k}: expected {x, y}`);
+      return k === 'at' ? { at: { x: v.x, y: v.y } } : { around: { x: v.x, y: v.y } };
     }
     // placement is a layout hint: an anchor that doesn't resolve falls back to automatic layout
     try {
@@ -823,7 +823,7 @@ const HANDLERS: Record<string, Handler> = {
     if (['neuron', 'arithmetic'].includes(form) && (!(L >= 1) || s.state.weights[L - 1]?.[J] === undefined)) fail(`zoom_into: no neuron ${focus} (layers ${describeArchitecture(layersOf(s))}; L starts at 1)`);
     const params = coerceParams('equation', { form, focus, ...(op.input !== undefined ? { input: String(op.input) } : {}) });
     const id = tx.newId('eq');
-    const label = form === 'boundary' ? `Boundary of ${s.label}` : form === 'network' ? `${s.label} as a function` : form === 'arithmetic' ? `Neuron ${focus} on input (${params.input})` : `Neuron ${focus}`;
+    const label = form === 'boundary' ? `Boundary of ${s.label}` : form === 'network' ? `${s.label} as a function` : form === 'arithmetic' ? `Neuron ${focus}: the arithmetic` : `Neuron ${focus}`;
     tx.createObject(
       { id, kind: 'equation', label, params, state: { latex: '' }, visual: tx.allocate(sizeFor('equation'), tx.placement(op.placement) ?? { below: src }), provenance: { derivedFrom: [src] } },
       'zoom_into',

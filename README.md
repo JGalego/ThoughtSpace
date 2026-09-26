@@ -27,7 +27,7 @@ what's on the page.
 ![Claude driving ThoughtSpace, with an OpenAI model as the in-app AI](docs/media/thoughtspace-demo.gif)
 
 *Claude drives the UI; the in-app AI is OpenAI gpt-5.5. Waits on the model are sped up.
-Regenerate with `scripts/record-demo.mjs` and `scripts/make-gif.py`.*
+More use cases are in [the gallery](#see-it-in-use) below.*
 
 This first prototype is about one domain, small neural networks, and one journey:
 *why does XOR need a hidden layer?*
@@ -104,6 +104,95 @@ Along the way you can zoom the canvas out (objects collapse to their essence) an
 into its scalar arithmetic. Fork the whole workspace (⑂) and diff branches. Undo and redo
 anything (⌘Z / ⇧⌘Z). Open the inspector to see each object's provenance, history, and
 exactly what the AI sees.
+
+## See it in use
+
+Each of these is recorded from the running app with the deterministic offline planner as
+the in-app AI, so they need no API key and can be reproduced exactly (see
+[regenerating](#regenerating-the-gifs)).
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Experiments and claims**<br/>
+The AI's claim starts *unverified*. A seeded, controlled experiment tests it (one variable,
+everything else constant, six seeds). The verdict is computed, *Reproduce* re-runs every
+seed and checks the results hash, and provenance shows which computation verified the
+claim.
+
+![Experiments and claims](docs/media/thoughtspace-experiments.gif)
+
+</td>
+<td width="50%" valign="top">
+
+**Branches and comparison**<br/>
+"What if we used ReLU?" creates a trained variant beside the original, with its assumption
+recorded, and a live side-by-side comparison. Forking the whole workspace gives a timeline
+with an explicit parent, and you can diff it against `main`.
+
+![Branches and comparison](docs/media/thoughtspace-branches.gif)
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Glyphs: reusable abstraction**<br/>
+The smallest working network becomes a glyph with exposed knobs and a live output. Turn a
+knob, train what's inside, expand it back into its construction, and place fresh copies
+from the library.
+
+![Glyphs](docs/media/thoughtspace-glyphs.gif)
+
+</td>
+<td width="50%" valign="top">
+
+**Semantic zoom**<br/>
+Zoom out and objects collapse to their essence. Zoom in and every weight appears.
+Double-click a neuron for its live equation, then zoom further to the scalar arithmetic for
+one input. Change a weight and every level follows.
+
+![Semantic zoom](docs/media/thoughtspace-zoom.gif)
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Hands on**<br/>
+Hover a data point and the network lights up with its activations. Drag weights and biases,
+click points to turn XOR into AND, train, scrub through training epoch by epoch, and ask
+which weight is fragile.
+
+![Hands on](docs/media/thoughtspace-hands-on.gif)
+
+</td>
+<td width="50%" valign="top">
+
+**History and provenance**<br/>
+Every change is an event. Inspect any object's parameters, provenance and history, and see
+exactly what the AI sees. Every object shows whether you or the AI made it. Undo walks back
+through the log, redo replays it exactly, and the branch menu keeps the whole timeline.
+
+![History and provenance](docs/media/thoughtspace-history.gif)
+
+</td>
+</tr>
+</table>
+
+### Regenerating the GIFs
+
+The GIFs are scripted scenarios in `scripts/gifs/scenarios/`, recorded from the running
+app by `scripts/gifs/record.mjs`. It uses Playwright with a visible cursor and captions,
+and `scripts/make-gif.py`, which needs Pillow, turns the frames into a GIF with waits on the
+AI sped up.
+
+```bash
+npm run dev &
+node scripts/gifs/record.mjs all          # or: experiments branches glyphs zoom hands-on history ink demo
+MODEL=gpt-5.5 node scripts/gifs/record.mjs demo   # the journey GIF uses a real model (OPENAI_API_KEY on the dev server)
+```
 
 ## Drawing
 

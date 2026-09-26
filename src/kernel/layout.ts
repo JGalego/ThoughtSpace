@@ -40,6 +40,7 @@ export function place(
   const { w, h } = size;
 
   if (placement && 'at' in placement) return { x: placement.at.x, y: placement.at.y, w, h };
+  if (placement && 'around' in placement) return nearestFree({ x: placement.around.x - w / 2, y: placement.around.y - h / 2, w, h }, taken, 'below');
 
   const anchorId =
     placement &&

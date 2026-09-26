@@ -109,7 +109,7 @@ export function NetworkView({ o }: { o: TSObject }) {
         <span className="muted">{hover ?? `${describeArchitecture(layers)} · drag edges & neurons`}</span>
         {m && <span className={`pill ${m.accuracy === 1 ? 'ok' : 'bad'}`}>{m.correct}/{m.total} correct</span>}
       </div>
-      <div className="spread" style={{ marginTop: 4 }}>
+      <div className="spread net-controls" style={{ marginTop: 4 }}>
         <div className="row">
           <select
             className="inline"
@@ -121,8 +121,8 @@ export function NetworkView({ o }: { o: TSObject }) {
               <option key={a}>{a}</option>
             ))}
           </select>
-          <button className="btn icon" title="remove a hidden layer" disabled={hidden.length === 0} onClick={() => ui.act([{ op: 'invoke', id: o.id, action: 'remove_layer' }])}>− layer</button>
-          <button className="btn icon" title="add a hidden layer of 2 units" disabled={hidden.length >= 3} onClick={() => ui.act([{ op: 'invoke', id: o.id, action: 'add_layer', args: { units: 2 } }])}>+ layer</button>
+          <button className="btn icon" title="remove a hidden layer" disabled={hidden.length === 0} onClick={() => ui.act([{ op: 'invoke', id: o.id, action: 'remove_layer' }])}>−L</button>
+          <button className="btn icon" title="add a hidden layer of 2 units" disabled={hidden.length >= 3} onClick={() => ui.act([{ op: 'invoke', id: o.id, action: 'add_layer', args: { units: 2 } }])}>+L</button>
           {hidden.length > 0 && (
             <>
               <button className="btn icon" title="fewer units in the last hidden layer" disabled={hidden[hidden.length - 1] <= 1} onClick={() => ui.act([{ op: 'invoke', id: o.id, action: 'set_units', args: { index: hidden.length - 1, units: hidden[hidden.length - 1] - 1 } }])}>−u</button>
