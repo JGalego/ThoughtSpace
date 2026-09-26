@@ -391,7 +391,7 @@ export function fmt(x: number | undefined, digits = 3): string {
  * buried deepest inside functions shapes the curve (theta in v0^2 sin(2 theta)/g, x in
  * sum(k,1,n, sin(k x)/k)); ties go to conventional names (x, t, …), then to the first
  * mentioned. Sliders further up the chain follow, the ones that move the value most first,
- * and the ones that do not move it at all last.
+ * and any that do not move it at all (right now) last.
  */
 export function axisCandidates(ws: Workspace, formulas: TSObject[]): TSObject[] {
   const behind = [...new Map(formulas.flatMap((f) => variablesBehind(ws, f.id)).map((v) => [v.state.name as string, v])).values()];
@@ -417,9 +417,10 @@ export function axisCandidates(ws: Workspace, formulas: TSObject[]): TSObject[] 
   };
   const score = (v: TSObject) => {
     const n = v.state.name as string;
-    if (depth.has(n)) return -1e6 * (depth.get(n)! + 1) + (conventional.includes(n) ? -1e5 + conventional.indexOf(n) : 0) + order.indexOf(n);
     const inf = influence(v);
-    return inf > 1e-12 ? -inf : 1e9;
+    if (!(inf > 1e-12)) return 1e9; // moving it changes nothing here: a flat line
+    if (depth.has(n)) return -1e6 * (depth.get(n)! + 1) + (conventional.includes(n) ? -1e5 + conventional.indexOf(n) : 0) + order.indexOf(n);
+    return -inf;
   };
   const scores = new Map(behind.map((v) => [v.id, score(v)]));
   return behind.sort((a, b) => scores.get(a.id)! - scores.get(b.id)!);
