@@ -170,6 +170,23 @@ every batch the model submitted and every rejection. The first runs against Open
   live for a whole agent turn. That took gpt-4.1 from failing the journey to 0 rejected
   batches.
 
+Any OpenAI-compatible server can run it too:
+
+```bash
+LIVE=1 LIVE_BASE_URL=http://localhost:11434/v1 LIVE_MODEL=qwen2.5:7b npm run test:live
+```
+
+Latest results (the full five-step journey, pass/fail as asserted by the test):
+
+| Model | Path | Result |
+|---|---|---|
+| gpt-5.5 | OpenAI Responses | passes |
+| gpt-5.4-mini | OpenAI Responses; Chat Completions (streamed) | passes both ways |
+| gpt-4.1 | OpenAI Responses | passes |
+| gpt-4.1 | Chat Completions | tool calls work; sometimes stops before training its fix to 100% (it reports the shortfall honestly) |
+| qwen3:4b | Ollama, CPU | works, but thinks for thousands of tokens per turn: far too slow on 4 CPU cores. Ollama's OpenAI endpoint can't switch its thinking off |
+| qwen2.5:3b | Ollama, CPU | the connection works end to end (tool call → kernel → reply), but the model is too small to build the construction |
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` typechecks, runs the offline test suite and builds on every push

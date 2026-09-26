@@ -23,6 +23,11 @@ export interface OpenAIConfig {
   api?: 'responses' | 'chat';
   /** shown in the UI and in error messages */
   label?: string;
+  /**
+   * reasoning_effort for Chat Completions servers that support it (Groq, Ollama, …).
+   * 'none' turns thinking off, which makes small local models far faster.
+   */
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
 }
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.5';
@@ -70,7 +75,7 @@ export function openaiAgent(cfg: OpenAIConfig): Agent {
     async run(text, host, history) {
       const runTool = toolRunner(host);
       try {
-        if (api === 'chat') await chatLoop(client, cfg.model, text, host, history, runTool);
+        if (api === 'chat') await chatLoop(client, cfg.model, text, host, history, runTool, cfg.reasoningEffort);
         else await responsesLoop(client, cfg.model, text, host, history, runTool);
       } catch (e) {
         host.say(errorText(e, label));
@@ -127,14 +132,14 @@ async function responsesLoop(client: OpenAI, model: string, text: string, host: 
 }
 
 /** Chat Completions: the conversation is resent each step; works with every compatible server. */
-async function chatLoop(client: OpenAI, model: string, text: string, host: AgentHost, history: { role: 'user' | 'ai'; text: string }[], runTool: ToolRunner) {
+async function chatLoop(client: OpenAI, model: string, text: string, host: AgentHost, history: { role: 'user' | 'ai'; text: string }[], runTool: ToolRunner, reasoningEffort?: OpenAIConfig['reasoningEffort']) {
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: SYSTEM },
     { role: 'user', content: openingMessage(text, host, history) },
   ];
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     host.status(turn === 0 ? 'thinking…' : 'working…');
-    const res = await chatCreate(client, { model, messages, tools: CHAT_TOOLS });
+    const res = await chatCreate(client, { model, messages, tools: CHAT_TOOLS, ...(reasoningEffort ? { reasoning_effort: reasoningEffort as any } : {}) });
     const choice = res.choices?.[0];
     const msg = choice?.message;
     if (!msg) return host.say('The model returned no message.');

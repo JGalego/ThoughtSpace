@@ -58,7 +58,7 @@ describe.skipIf(!LIVE)(`live journey with ${BASE_URL ?? 'OpenAI'} ${MODEL} (${AP
   it(
     'builds, explains, fixes, compares and abstracts through the kernel',
     async () => {
-      const h = harness(openaiAgent({ mode: 'key', apiKey: API_KEY, model: MODEL, baseURL: BASE_URL, api: API, label: BASE_URL ?? 'OpenAI' }));
+      const h = harness(openaiAgent({ mode: 'key', apiKey: API_KEY, model: MODEL, baseURL: BASE_URL, api: API, label: BASE_URL ?? 'OpenAI', reasoningEffort: (process.env.LIVE_REASONING as any) || undefined }));
 
       await h.ask("Let's understand why XOR requires a hidden layer.", []);
       const nets = () => h.objs().filter((o) => o.kind === 'neural_network');

@@ -106,9 +106,9 @@ export function App() {
     if (p === 'compatible') {
       const c = settings.compat;
       const label = COMPATIBLE_PRESETS.find((x) => x.id === c.preset)?.name.replace(/ \(local\)$/, '') ?? 'OpenAI-compatible';
-      if (settings.access.compatible === 'proxy' && PROXIES.compatible) return openaiAgent({ mode: 'proxy', proxyPath: '/api/compat', model, api: c.api, label });
+      if (settings.access.compatible === 'proxy' && PROXIES.compatible) return openaiAgent({ mode: 'proxy', proxyPath: '/api/compat', model, api: c.api, label, reasoningEffort: c.reasoning || undefined });
       // local servers usually need no key
-      if (c.baseURL) return openaiAgent({ mode: 'key', apiKey: settings.keys.compatible, baseURL: c.baseURL, model, api: c.api, label });
+      if (c.baseURL) return openaiAgent({ mode: 'key', apiKey: settings.keys.compatible, baseURL: c.baseURL, model, api: c.api, label, reasoningEffort: c.reasoning || undefined });
       return localAgent;
     }
     const make = p === 'anthropic' ? claudeAgent : openaiAgent;

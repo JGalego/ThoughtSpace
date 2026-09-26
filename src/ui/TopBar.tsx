@@ -14,7 +14,7 @@ export interface AgentSettings {
   keys: Record<Provider, string>;
   models: Record<Provider, string>;
   /** the OpenAI-compatible server (Groq, Ollama, OpenRouter, …) */
-  compat: { preset: string; baseURL: string; api: 'chat' | 'responses' };
+  compat: { preset: string; baseURL: string; api: 'chat' | 'responses'; reasoning: '' | 'none' | 'low' | 'medium' | 'high' };
 }
 
 declare const __PROXIES__: Record<Provider, boolean>;
@@ -27,11 +27,12 @@ const COMPAT_MODEL = typeof __COMPAT_MODEL__ !== 'undefined' ? __COMPAT_MODEL__ 
 export function defaultSettings(): AgentSettings {
   const preset = COMPATIBLE_PRESETS.find((p) => p.baseURL === COMPAT_BASE) ?? COMPATIBLE_PRESETS[0];
   return {
-    provider: PROXIES.anthropic ? 'anthropic' : PROXIES.openai ? 'openai' : PROXIES.compatible ? 'compatible' : 'offline',
+    // an explicitly configured compatible server is the most specific intent
+    provider: PROXIES.compatible ? 'compatible' : PROXIES.anthropic ? 'anthropic' : PROXIES.openai ? 'openai' : 'offline',
     access: { anthropic: PROXIES.anthropic ? 'proxy' : 'key', openai: PROXIES.openai ? 'proxy' : 'key', compatible: PROXIES.compatible ? 'proxy' : 'key' },
     keys: { anthropic: '', openai: '', compatible: '' },
     models: { anthropic: DEFAULT_MODEL, openai: DEFAULT_OPENAI_MODEL, compatible: COMPAT_MODEL || preset.model },
-    compat: { preset: COMPAT_BASE && !COMPATIBLE_PRESETS.some((p) => p.baseURL === COMPAT_BASE) ? 'custom' : preset.id, baseURL: COMPAT_BASE || preset.baseURL, api: 'chat' },
+    compat: { preset: COMPAT_BASE && !COMPATIBLE_PRESETS.some((p) => p.baseURL === COMPAT_BASE) ? 'custom' : preset.id, baseURL: COMPAT_BASE || preset.baseURL, api: 'chat', reasoning: '' },
   };
 }
 
@@ -72,6 +73,16 @@ function CompatFields({ settings, setSettings }: { settings: AgentSettings; setS
       <label className="item small">
         <input type="checkbox" checked={c.api === 'responses'} onChange={(e) => setSettings({ ...settings, compat: { ...c, api: e.target.checked ? 'responses' : 'chat' } })} /> server speaks the Responses API (default: Chat Completions)
       </label>
+      <div className="param" title="sent as reasoning_effort; 'none' turns thinking off on servers that support it (e.g. Groq), which makes models much faster. Ollama's OpenAI endpoint ignores it for qwen3.">
+        <label>thinking</label>
+        <select className="inline" value={c.reasoning} onChange={(e) => setSettings({ ...settings, compat: { ...c, reasoning: e.target.value as AgentSettings['compat']['reasoning'] } })}>
+          <option value="">server default</option>
+          <option value="none">off (none)</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+        </select>
+      </div>
     </>
   );
 }
@@ -223,10 +234,10 @@ export function TopBar({
             {PROVIDERS.filter((pv) => pv.id === settings.provider).map((pv) => (
               <div key={pv.id} style={{ padding: '2px 6px' }}>
                 <label className="item" style={{ opacity: PROXIES[pv.id] ? 1 : 0.5 }}>
-                  <input type="radio" disabled={!PROXIES[pv.id]} checked={settings.access[pv.id] === 'proxy'} onChange={() => setSettings({ ...settings, access: { ...settings.access, [pv.id]: 'proxy' } })} /> key from the dev server {PROXIES[pv.id] ? '' : `(set ${pv.env})`}
+                  <input type="radio" disabled={!PROXIES[pv.id]} checked={settings.access[pv.id] === 'proxy'} onChange={() => setSettings({ ...settings, access: { ...settings.access, [pv.id]: 'proxy' } })} /> {pv.id === 'compatible' ? 'through the dev server' : 'key from the dev server'} {PROXIES[pv.id] ? '' : `(set ${pv.env})`}
                 </label>
                 <label className="item">
-                  <input type="radio" checked={settings.access[pv.id] === 'key'} onChange={() => setSettings({ ...settings, access: { ...settings.access, [pv.id]: 'key' } })} /> my own key
+                  <input type="radio" checked={settings.access[pv.id] === 'key'} onChange={() => setSettings({ ...settings, access: { ...settings.access, [pv.id]: 'key' } })} /> {pv.id === 'compatible' ? 'directly from the browser' : 'my own key'}
                 </label>
                 {settings.access[pv.id] === 'key' && (
                   <>
