@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Kernel, type BranchDiff, type ObjectId, type Operation } from '../kernel';
+import { Kernel, type BranchDiff, type ObjectId, type Operation, type ink } from '../kernel';
 import { localAgent } from '../agent/local';
 import { claudeAgent } from '../agent/claude';
-import { openaiAgent } from '../agent/openai';
+import { COMPATIBLE_PRESETS, openaiAgent } from '../agent/openai';
 import type { AgentHost } from '../agent/host';
 import { UICtx, useKernelVersion, type Detail, type UI } from './context';
 import { Canvas, type View } from './Canvas';
@@ -41,11 +41,13 @@ export function App() {
   const [settings, setSettingsState] = useState<AgentSettings>(() => {
     const d = defaultSettings();
     const s = readJSON<Partial<AgentSettings>>(SETTINGS, {});
-    return { ...d, ...s, access: { ...d.access, ...s.access }, keys: { ...d.keys, ...s.keys }, models: { ...d.models, ...s.models } };
+    return { ...d, ...s, access: { ...d.access, ...s.access }, keys: { ...d.keys, ...s.keys }, models: { ...d.models, ...s.models }, compat: { ...d.compat, ...s.compat } };
   });
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(readJSON<string[]>(DISMISSED, [])));
   const [diff, setDiff] = useState<BranchDiff | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [tool, setTool] = useState<'select' | 'pen'>('select');
+  const [pen, setPen] = useState<ink.InkColor>('ink');
   const hiTimer = useRef<number | undefined>(undefined);
   // the inspector waits until the pointer is released so it never lands on what you're clicking
   const [pointerDown, setPointerDown] = useState(false);
@@ -100,8 +102,16 @@ export function App() {
   const agent = useMemo(() => {
     const p = settings.provider;
     if (p === 'offline') return localAgent;
-    const make = p === 'anthropic' ? claudeAgent : openaiAgent;
     const model = settings.models[p];
+    if (p === 'compatible') {
+      const c = settings.compat;
+      const label = COMPATIBLE_PRESETS.find((x) => x.id === c.preset)?.name.replace(/ \(local\)$/, '') ?? 'OpenAI-compatible';
+      if (settings.access.compatible === 'proxy' && PROXIES.compatible) return openaiAgent({ mode: 'proxy', proxyPath: '/api/compat', model, api: c.api, label });
+      // local servers usually need no key
+      if (c.baseURL) return openaiAgent({ mode: 'key', apiKey: settings.keys.compatible, baseURL: c.baseURL, model, api: c.api, label });
+      return localAgent;
+    }
+    const make = p === 'anthropic' ? claudeAgent : openaiAgent;
     if (settings.access[p] === 'proxy' && PROXIES[p]) return make({ mode: 'proxy', model });
     if (settings.access[p] === 'key' && settings.keys[p]) return make({ mode: 'key', apiKey: settings.keys[p], model });
     return localAgent;
@@ -201,6 +211,10 @@ export function App() {
       }),
     focus,
     viewportCenter,
+    tool,
+    setTool,
+    pen,
+    setPen,
   };
 
   // keyboard
@@ -218,7 +232,11 @@ export function App() {
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.length) {
         e.preventDefault();
         kernel.dispatch(selection.map((id) => ({ op: 'delete_object', id })), 'human');
-      } else if (e.key === 'Escape') setSelection([]);
+      } else if (e.key === 'Escape') {
+        setSelection([]);
+        setTool('select');
+      } else if (!mod && (e.key === 'p' || e.key === 'P')) setTool(tool === 'pen' ? 'select' : 'pen');
+      else if (!mod && tool === 'pen' && ['1', '2', '3', '4'].includes(e.key)) setPen((['ink', 'orange', 'blue', 'violet'] as const)[Number(e.key) - 1]);
       else if (mod && e.key.toLowerCase() === 'd' && selection.length === 1) {
         e.preventDefault();
         kernel.dispatch([{ op: 'duplicate', id: selection[0] }], 'human');

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Also run the live journey against an OpenAI model (needs the OPENAI_API_KEY secret)
+        type: boolean
+        default: false
+      model:
+        description: OpenAI model for the live journey
+        default: gpt-5.4-mini
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  live:
+    name: Live journey (OpenAI)
+    if: github.event_name == 'workflow_dispatch' && inputs.live
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run the canonical journey through a real model
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ inputs.model }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then echo "::warning::OPENAI_API_KEY secret is not set; skipping"; exit 0; fi
+          npm run test:live

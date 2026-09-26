@@ -17,7 +17,7 @@ function overlaps(a: Rect, b: Rect, margin = 16): boolean {
 
 function occupied(ws: Workspace, pending: Rect[], ignore?: Set<ObjectId>): Rect[] {
   const rs: Rect[] = Object.values(ws.objects)
-    .filter((o) => !o.visual.hidden && o.kind !== 'group' && !(ignore && ignore.has(o.id)))
+    .filter((o) => !o.visual.hidden && o.kind !== 'group' && o.kind !== 'sketch' && !(ignore && ignore.has(o.id)))  // ink is on the paper, not in the way
     .map((o) => o.visual);
   return rs.concat(pending);
 }

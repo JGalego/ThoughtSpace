@@ -116,7 +116,7 @@ same JSON operations. The model never emits coordinates or DOM edits; it emits i
 { "op": "claim", "text": "…", "about": ["net_1"] }  →  { "op": "verify_claim", "claim": "…", "evidence": "exp_1" }
 ```
 
-Full list: `create_object, delete_object, modify_object, set_parameter, invoke, move_object,
+Full list: `create_object, delete_object, modify_object, set_parameter, invoke, move_object, draw, set_boundary,
 resize_object, connect, disconnect, duplicate, group, ungroup, abstract, expand,
 instantiate_glyph, execute, plot, zoom_into, experiment, reproduce, branch, compare,
 annotate, claim, verify_claim`. (`inspect` and `highlight` are read-only / transient and
@@ -231,6 +231,16 @@ touching the protocol.
    **glyph** with exposed parameters (hidden units, activation, seed) and a live preview.
    It can be expanded back into its graph, zoomed into, and instantiated again from the
    library.
+
+### Ink
+
+Drawing is part of the medium, as in *Magic Paper*. A human stroke is interpreted by the
+renderer, which knows where things are drawn. Where the ink lands on something that
+understands it, it compiles to a semantic operation: a dot on data becomes `add_point`, a
+line across a single neuron's plot becomes `set_boundary`, and a loop selects. Everything
+else becomes a `sketch` object that annotates what it was drawn over and moves with it.
+The AI draws only semantic shapes (`draw {shape, target, to?}`), and the kernel computes the
+strokes deterministically.
 
 ## 8. Smallest feature set that makes the demo compelling
 

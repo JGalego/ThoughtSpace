@@ -4,6 +4,7 @@ import { useRef, useState, type JSX } from 'react';
 import { kindSpec, suggestions, type ObjectId, type Relation, type TSObject, type Workspace } from '../kernel';
 import { useUI } from './context';
 import { RENDERERS } from './views';
+import { PenOverlay, SketchLayer } from './Ink';
 
 export interface View {
   x: number;
@@ -36,7 +37,7 @@ export function Canvas({ view, setView }: { view: View; setView: (v: View) => vo
 
   const visible = Object.values(ws.objects).filter((o) => !o.visual.hidden);
   const groups = visible.filter((o) => o.kind === 'group');
-  const others = visible.filter((o) => o.kind !== 'group');
+  const others = visible.filter((o) => o.kind !== 'group' && o.kind !== 'sketch');
   const sugg = suggestions(ws).filter((s) => !ui.dismissed.has(s.key));
 
   // ------------------------------------------------------------ pointer handling
@@ -115,6 +116,8 @@ export function Canvas({ view, setView }: { view: View; setView: (v: View) => vo
     const starts: Record<string, { x: number; y: number }> = {};
     for (const id of sel) {
       const s = ws.objects[id];
+      // ink anchored to a selected object already travels with it
+      if (s?.kind === 'sketch' && sel.includes(s.state.anchor)) continue;
       if (s && !s.visual.hidden) starts[id] = { x: s.visual.x, y: s.visual.y };
     }
     set({ kind: 'move', x0: e.clientX, y0: e.clientY, starts, key: `move:${Date.now()}` });
@@ -123,7 +126,7 @@ export function Canvas({ view, setView }: { view: View; setView: (v: View) => vo
   // --------------------------------------------------------------------- render
 
   return (
-    <div ref={ref} className={`canvas ${drag?.kind === 'pan' ? 'panning' : ''}`} onPointerDown={onBgDown} onPointerMove={onMove} onPointerUp={onUp} onWheel={onWheel}>
+    <div ref={ref} className={`canvas ${drag?.kind === 'pan' ? 'panning' : ''} ${ui.tool === 'pen' ? 'pen' : ''}`} onPointerDown={onBgDown} onPointerMove={onMove} onPointerUp={onUp} onWheel={onWheel}>
       <div className="canvas-bg" style={{ backgroundSize: `${22 * view.s}px ${22 * view.s}px`, backgroundPosition: `${view.x}px ${view.y}px` }} />
       <div className="world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}>
         <Relations ws={ws} pending={drag?.kind === 'connect' ? drag : null} />
@@ -152,10 +155,12 @@ export function Canvas({ view, setView }: { view: View; setView: (v: View) => vo
             suggestions={sugg.filter((s) => s.target === o.id).slice(0, 1)}
           />
         ))}
+        <SketchLayer ws={ws} onDown={startMove} />
         {drag?.kind === 'marquee' && (
           <div className="marquee" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />
         )}
       </div>
+      {ui.tool === 'pen' && <PenOverlay view={view} toWorld={toWorld} />}
     </div>
   );
 }

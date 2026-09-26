@@ -9,3 +9,4 @@ export { OPS } from './ops';
 export * as nn from './nn';
 export { formatValue, smallestWorking, METRICS } from './experiment';
 export { ACTIVATIONS } from './nn';
+export * as ink from './ink';

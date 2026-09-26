@@ -1,5 +1,5 @@
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import type { Kernel, ObjectId, Operation, OpResult, Workspace } from '../kernel';
+import type { Kernel, ObjectId, Operation, OpResult, Workspace, ink } from '../kernel';
 
 export type Detail = 'glance' | 'normal' | 'detail';
 
@@ -20,6 +20,11 @@ export interface UI {
   dismiss(key: string): void;
   focus(ids: ObjectId[]): void;
   viewportCenter(): { x: number; y: number };
+  /** select/move vs. drawing with the pen */
+  tool: 'select' | 'pen';
+  setTool(t: 'select' | 'pen'): void;
+  pen: ink.InkColor;
+  setPen(c: ink.InkColor): void;
 }
 
 export const UICtx = createContext<UI | null>(null);

@@ -3,6 +3,7 @@
 import json, sys
 from PIL import Image, ImageDraw, ImageFont
 SP = sys.argv[1]; OUT = sys.argv[2]
+BUSY = sys.argv[3] if len(sys.argv) > 3 else '>> the in-app AI (OpenAI) is working - sped up 5x'
 meta = json.load(open(f'{SP}/frames.json'))
 W, H = 960, 600
 FPS = 8
@@ -26,7 +27,7 @@ while i < len(timeline):
     im = Image.open(m['f']).convert('RGB').resize((W, H), Image.LANCZOS)
     if m['busy']:
         d = ImageDraw.Draw(im)
-        label = '>> the in-app AI (OpenAI) is working - sped up 5x'
+        label = BUSY
         tw = d.textlength(label, font=font)
         d.rounded_rectangle([W - tw - 34, H - 118, W - 14, H - 88], radius=14, fill=(107, 85, 201))
         d.text((W - tw - 24, H - 112), label, font=font, fill=(255, 255, 255))

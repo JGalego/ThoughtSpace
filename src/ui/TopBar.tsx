@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useUI } from './context';
+import { INK_SWATCHES } from './Ink';
+import { ink } from '../kernel';
 import { DEFAULT_MODEL } from '../agent/claude';
-import { DEFAULT_OPENAI_MODEL } from '../agent/openai';
+import { COMPATIBLE_PRESETS, DEFAULT_OPENAI_MODEL } from '../agent/openai';
 
-export type Provider = 'anthropic' | 'openai';
+export type Provider = 'anthropic' | 'openai' | 'compatible';
 
 export interface AgentSettings {
   provider: 'offline' | Provider;
@@ -11,24 +13,68 @@ export interface AgentSettings {
   access: Record<Provider, 'proxy' | 'key'>;
   keys: Record<Provider, string>;
   models: Record<Provider, string>;
+  /** the OpenAI-compatible server (Groq, Ollama, OpenRouter, …) */
+  compat: { preset: string; baseURL: string; api: 'chat' | 'responses' };
 }
 
 declare const __PROXIES__: Record<Provider, boolean>;
-export const PROXIES: Record<Provider, boolean> = typeof __PROXIES__ !== 'undefined' ? __PROXIES__ : { anthropic: false, openai: false };
+declare const __COMPAT_BASE__: string;
+declare const __COMPAT_MODEL__: string;
+export const PROXIES: Record<Provider, boolean> = { anthropic: false, openai: false, compatible: false, ...(typeof __PROXIES__ !== 'undefined' ? __PROXIES__ : {}) };
+const COMPAT_BASE = typeof __COMPAT_BASE__ !== 'undefined' ? __COMPAT_BASE__ : '';
+const COMPAT_MODEL = typeof __COMPAT_MODEL__ !== 'undefined' ? __COMPAT_MODEL__ : '';
 
 export function defaultSettings(): AgentSettings {
+  const preset = COMPATIBLE_PRESETS.find((p) => p.baseURL === COMPAT_BASE) ?? COMPATIBLE_PRESETS[0];
   return {
-    provider: PROXIES.anthropic ? 'anthropic' : PROXIES.openai ? 'openai' : 'offline',
-    access: { anthropic: PROXIES.anthropic ? 'proxy' : 'key', openai: PROXIES.openai ? 'proxy' : 'key' },
-    keys: { anthropic: '', openai: '' },
-    models: { anthropic: DEFAULT_MODEL, openai: DEFAULT_OPENAI_MODEL },
+    provider: PROXIES.anthropic ? 'anthropic' : PROXIES.openai ? 'openai' : PROXIES.compatible ? 'compatible' : 'offline',
+    access: { anthropic: PROXIES.anthropic ? 'proxy' : 'key', openai: PROXIES.openai ? 'proxy' : 'key', compatible: PROXIES.compatible ? 'proxy' : 'key' },
+    keys: { anthropic: '', openai: '', compatible: '' },
+    models: { anthropic: DEFAULT_MODEL, openai: DEFAULT_OPENAI_MODEL, compatible: COMPAT_MODEL || preset.model },
+    compat: { preset: COMPAT_BASE && !COMPATIBLE_PRESETS.some((p) => p.baseURL === COMPAT_BASE) ? 'custom' : preset.id, baseURL: COMPAT_BASE || preset.baseURL, api: 'chat' },
   };
 }
 
 const PROVIDERS: { id: Provider; name: string; env: string; host: string; placeholder: string; fallback: string }[] = [
   { id: 'anthropic', name: 'Claude', env: 'ANTHROPIC_API_KEY', host: 'api.anthropic.com', placeholder: 'sk-ant-…', fallback: DEFAULT_MODEL },
   { id: 'openai', name: 'OpenAI', env: 'OPENAI_API_KEY', host: 'api.openai.com', placeholder: 'sk-…', fallback: DEFAULT_OPENAI_MODEL },
+  { id: 'compatible', name: 'OpenAI-compatible (Groq, Ollama, OpenRouter, …)', env: 'OPENAI_COMPAT_BASE_URL', host: 'that server', placeholder: 'API key (blank for local servers)', fallback: COMPATIBLE_PRESETS[0].model },
 ];
+
+function CompatFields({ settings, setSettings }: { settings: AgentSettings; setSettings: (s: AgentSettings) => void }) {
+  const c = settings.compat;
+  const stop = (e: React.KeyboardEvent) => e.stopPropagation();
+  const proxied = settings.access.compatible === 'proxy' && PROXIES.compatible;
+  const preset = COMPATIBLE_PRESETS.find((p) => p.id === c.preset);
+  return (
+    <>
+      <h4 style={{ marginTop: 8 }}>Server</h4>
+      {proxied ? (
+        <div className="small muted" style={{ padding: '0 4px 6px' }}>dev server proxies to {COMPAT_BASE}</div>
+      ) : (
+        <>
+          <select
+            className="inline"
+            style={{ width: '100%', marginBottom: 4 }}
+            value={c.preset}
+            onChange={(e) => {
+              const p = COMPATIBLE_PRESETS.find((x) => x.id === e.target.value);
+              setSettings({ ...settings, compat: { ...c, preset: e.target.value, baseURL: p?.baseURL ?? c.baseURL }, models: { ...settings.models, compatible: p?.model ?? settings.models.compatible } });
+            }}
+          >
+            {COMPATIBLE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <option value="custom">Other…</option>
+          </select>
+          <input type="text" placeholder="base URL, e.g. https://api.groq.com/openai/v1" value={c.baseURL} onChange={(e) => setSettings({ ...settings, compat: { ...c, preset: 'custom', baseURL: e.target.value } })} onKeyDown={stop} />
+          {preset?.note && <div className="small muted">{preset.note}</div>}
+        </>
+      )}
+      <label className="item small">
+        <input type="checkbox" checked={c.api === 'responses'} onChange={(e) => setSettings({ ...settings, compat: { ...c, api: e.target.checked ? 'responses' : 'chat' } })} /> server speaks the Responses API (default: Chat Completions)
+      </label>
+    </>
+  );
+}
 
 type Pop = null | 'branches' | 'glyphs' | 'add' | 'settings';
 
@@ -149,6 +195,18 @@ export function TopBar({
         )}
       </div>
 
+      <div className="tb-group">
+        <button className={`tb-btn ${ui.tool === 'pen' ? 'on' : ''}`} onClick={() => ui.setTool(ui.tool === 'pen' ? 'select' : 'pen')} title="draw on the paper (P)">✎ Draw</button>
+        {ui.tool === 'pen' && (
+          <>
+            {INK_SWATCHES.map((s, i) => (
+              <button key={s.color} className={`swatch ${ui.pen === s.color ? 'on' : ''}`} style={{ background: ink.INK_HEX[s.color] }} title={`${s.title} (${i + 1})`} onClick={() => ui.setPen(s.color)} />
+            ))}
+            <span className="pen-hint">dot on data = point · line across a neuron's plot = its boundary · loop = select</span>
+          </>
+        )}
+      </div>
+
       <span className="spacer" />
 
       <div className="tb-group anchor">
@@ -176,6 +234,7 @@ export function TopBar({
                     <div className="small muted">Stored in this browser only and sent directly to {pv.host}.</div>
                   </>
                 )}
+                {pv.id === 'compatible' && <CompatFields settings={settings} setSettings={setSettings} />}
                 <h4 style={{ marginTop: 8 }}>Model</h4>
                 <input type="text" value={settings.models[pv.id]} onChange={(e) => setSettings({ ...settings, models: { ...settings.models, [pv.id]: e.target.value || pv.fallback } })} onKeyDown={(e) => e.stopPropagation()} />
               </div>

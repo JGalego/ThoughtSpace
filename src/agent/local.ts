@@ -458,6 +458,7 @@ function explainNetwork(c: Ctx, net: TSObject) {
     const hasBoundaryEq = relationsTo(ws, net.id, 'visualizes').some((r) => ws.objects[r.from]?.kind === 'equation' && ws.objects[r.from].params.form === 'boundary');
     if (!hasBoundaryEq) ops.push({ op: 'zoom_into', id: net.id, form: 'boundary', ref: 'eq', placement: plot ? { below: plot.id } : { below: net.id } });
     ops.push({ op: 'annotate', target: plot ? plot.id : net.id, subtarget: 'boundary', text, label: 'Why it fails' });
+    if (plot) ops.push({ op: 'draw', shape: 'circle', target: plot.id, note: 'one straight line, whatever the weights' });
   } else if (hidden.length > 0 && net.params.activation === 'linear') {
     text = 'Every hidden unit is linear, and a composition of linear maps is linear: the whole network still draws one straight line. It needs a nonlinear activation (tanh, sigmoid, ReLU).';
     ops.push({ op: 'annotate', target: net.id, text, label: 'Why it fails' });

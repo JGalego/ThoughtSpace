@@ -8,8 +8,13 @@ import { Kernel, datasetFor, networkMetrics, type ObjectId, type TSObject } from
 import type { Agent, AgentHost } from '../../src/agent/host';
 import { openaiAgent } from '../../src/agent/openai';
 
-const LIVE = !!process.env.LIVE && !!process.env.OPENAI_API_KEY;
-const MODEL = process.env.OPENAI_MODEL ?? 'gpt-5.5';
+// Any OpenAI-compatible server works: LIVE_BASE_URL (+ LIVE_API=chat for Chat Completions).
+//   LIVE=1 LIVE_BASE_URL=http://localhost:11434/v1 LIVE_API=chat LIVE_MODEL=qwen3:4b npx vitest run tests/live
+const BASE_URL = process.env.LIVE_BASE_URL;
+const API_KEY = process.env.LIVE_API_KEY ?? (BASE_URL ? undefined : process.env.OPENAI_API_KEY);
+const LIVE = !!process.env.LIVE && (!!API_KEY || !!BASE_URL);
+const MODEL = process.env.LIVE_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5.5';
+const API = (process.env.LIVE_API as 'chat' | 'responses' | undefined) ?? (BASE_URL ? 'chat' : 'responses');
 
 function harness(agent: Agent) {
   const kernel = new Kernel();
@@ -49,18 +54,19 @@ function harness(agent: Agent) {
   return { kernel, ask, objs, stats };
 }
 
-describe.skipIf(!LIVE)(`live journey with OpenAI ${MODEL}`, () => {
+describe.skipIf(!LIVE)(`live journey with ${BASE_URL ?? 'OpenAI'} ${MODEL} (${API})`, () => {
   it(
     'builds, explains, fixes, compares and abstracts through the kernel',
     async () => {
-      const h = harness(openaiAgent({ mode: 'key', apiKey: process.env.OPENAI_API_KEY, model: MODEL }));
+      const h = harness(openaiAgent({ mode: 'key', apiKey: API_KEY, model: MODEL, baseURL: BASE_URL, api: API, label: BASE_URL ?? 'OpenAI' }));
 
       await h.ask("Let's understand why XOR requires a hidden layer.", []);
       const nets = () => h.objs().filter((o) => o.kind === 'neural_network');
       expect(nets().length).toBeGreaterThan(0);
       const net = nets()[0];
       expect(datasetFor(h.kernel.state(), net.id)).toBeTruthy();
-      expect(h.objs().some((o) => o.kind === 'graph')).toBe(true);
+      // a view of the model: a plot or an equation
+      expect(h.objs().some((o) => o.kind === 'graph' || o.kind === 'equation')).toBe(true);
 
       const single = nets().find((n) => (n.params.hidden as number[]).length === 0) ?? net;
       await h.ask("Why doesn't this one work?", [single.id]);
@@ -83,6 +89,6 @@ describe.skipIf(!LIVE)(`live journey with OpenAI ${MODEL}`, () => {
 
       console.log(`[${MODEL}] batches ${h.stats.batches}, rejected ${h.stats.rejected}, highlights ${h.stats.highlights}, objects ${h.objs().length}`);
     },
-    15 * 60 * 1000,
+    Number(process.env.LIVE_TIMEOUT_MIN ?? 15) * 60 * 1000,
   );
 });

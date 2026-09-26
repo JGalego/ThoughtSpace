@@ -264,6 +264,30 @@ const dataset: KindSpec = {
     return { ...o.state, points: DATASET_PRESETS[value as string].map((q) => ({ x: [...q.x], y: q.y })) };
   },
   actions: {
+    add_point: {
+      description: 'add a labelled point (e.g. drawn with the pen: orange = 1, blue = 0)',
+      args: [
+        { name: 'x1', type: 'number', default: 0, min: -10, max: 10, description: 'first coordinate' },
+        { name: 'x2', type: 'number', default: 0, min: -10, max: 10, description: 'second coordinate' },
+        { name: 'label', type: 'int', default: 1, min: 0, max: 1, description: 'class 0 or 1' },
+      ],
+      apply(o, a) {
+        const pts = o.state.points as Point[];
+        if (pts.length >= 64) return 'at most 64 points';
+        const points = [...pts, { x: [round4(a.x1 as number), round4(a.x2 as number)] as [number, number], y: a.label as 0 | 1 }];
+        return { state: { ...o.state, points }, params: { ...o.params, preset: matchPreset(points) } };
+      },
+    },
+    remove_point: {
+      description: 'remove point i',
+      args: [{ name: 'index', type: 'int', default: 0, min: 0, max: 63, description: 'point index' }],
+      apply(o, a) {
+        const pts = o.state.points as Point[];
+        if (!pts[a.index as number]) return `no point ${a.index}`;
+        const points = pts.filter((_, i) => i !== a.index);
+        return { state: { ...o.state, points }, params: { ...o.params, preset: matchPreset(points) } };
+      },
+    },
     flip_label: {
       description: 'flip the label of point i',
       args: [{ name: 'index', type: 'int', default: 0, min: 0, max: 63, description: 'point index' }],
@@ -440,6 +464,30 @@ const glyph: KindSpec = {
   summarize: (o) => ({ name: o.state.name, definition: o.state.definition, members: o.state.members, exposed: o.state.exposed, output: o.state.output, expanded: !!o.visual.expanded }),
 };
 
+const sketch: KindSpec = {
+  kind: 'sketch',
+  title: 'Ink',
+  description:
+    'Freehand ink on the paper. The human draws it with the pen; you draw with the draw operation using semantic shapes (circle, underline, arrow, cross, check) around objects. Ink drawn over an object annotates it and moves with it.',
+  params: [],
+  size: { w: 40, h: 40 },
+  creatable: false,
+  ports: () => ({ inputs: [], outputs: [] }),
+  defaultState: (_p, init) => ({ strokes: [], color: 'ink', shape: 'freeform', ...(init ?? {}) }),
+  summarize(o, ws) {
+    const over = relationsFrom(ws, o.id, 'annotates').map((r) => r.to);
+    return {
+      drawn_by: o.provenance.createdBy,
+      shape: o.state.shape,
+      color: o.state.color,
+      strokes: (o.state.strokes as unknown[]).length,
+      size: `${Math.round(o.visual.w)}×${Math.round(o.visual.h)}`,
+      ...(over.length ? { on: over } : {}),
+      ...(o.state.note ? { note: o.state.note } : {}),
+    };
+  },
+};
+
 export const KINDS: Record<ObjectKind, KindSpec> = {
   neural_network: nn,
   dataset,
@@ -453,6 +501,7 @@ export const KINDS: Record<ObjectKind, KindSpec> = {
   claim,
   group,
   glyph,
+  sketch,
 };
 
 export function kindSpec(kind: string): KindSpec | undefined {

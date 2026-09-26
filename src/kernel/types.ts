@@ -17,7 +17,8 @@ export type ObjectKind =
   | 'comparison'
   | 'claim'
   | 'group'
-  | 'glyph';
+  | 'glyph'
+  | 'sketch';
 
 export type ParamValue = number | string | boolean | number[] | null;
 

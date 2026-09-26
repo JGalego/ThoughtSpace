@@ -1,4 +1,19 @@
+<div align="center">
+
 # ThoughtSpace
+
+[![CI](https://github.com/JGalego/ThoughtSpace/actions/workflows/ci.yml/badge.svg)](https://github.com/JGalego/ThoughtSpace/actions/workflows/ci.yml)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
+![Tested with Vitest](https://img.shields.io/badge/tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)
+<br/>
+![Claude](https://img.shields.io/badge/AI-Claude-D97757?logo=anthropic&logoColor=white)
+![OpenAI](https://img.shields.io/badge/AI-OpenAI-412991?logo=openai&logoColor=white)
+![OpenAI-compatible](https://img.shields.io/badge/AI-Groq%20%C2%B7%20Ollama%20%C2%B7%20OpenRouter%20%C2%B7%20…-555555)
+![Offline](https://img.shields.io/badge/AI-offline%20planner-6b55c9)
+
+</div>
 
 **An AI-native medium for thinking.** ThoughtSpace is a shared workspace of persistent,
 semantic, executable objects. A human and an AI manipulate the *same* objects through the
@@ -24,11 +39,14 @@ npm install
 npm run dev            # http://localhost:5173 — works offline with the deterministic planner
 ANTHROPIC_API_KEY=sk-ant-… npm run dev   # Claude participates; the key stays on the dev server
 OPENAI_API_KEY=sk-… npm run dev          # an OpenAI model participates, same way
+OPENAI_COMPAT_BASE_URL=https://api.groq.com/openai/v1 OPENAI_COMPAT_API_KEY=gsk_… npm run dev
+                                          # any OpenAI-compatible server (Groq, Ollama, OpenRouter, …)
 npm test               # kernel, protocol, journey and agent-loop tests (offline)
 LIVE=1 OPENAI_MODEL=gpt-5.5 npm run test:live   # the whole journey against a real model
 ```
 
-Choose the AI participant in the ⚙ menu: the offline planner, Claude, or OpenAI. For each
+Choose the AI participant in the ⚙ menu: the offline planner, Claude, OpenAI, or any
+OpenAI-compatible server. For each
 provider you can use the dev server's key or paste your own, which is kept in your browser
 and sent straight to that provider. You can also set the model there.
 
@@ -38,8 +56,24 @@ and sent straight to that provider. You can also set the model there.
 - **OpenAI** defaults to `gpt-5.5` and uses the Responses API with function tools. Newer
   models reject tools combined with reasoning on Chat Completions.
 
-Both providers get the same system prompt, the same three tools and the same kernel.
+- **OpenAI-compatible servers** use Chat Completions, the dialect they all speak (or the
+  Responses API, if you tick that for a server that has it). There are presets for Groq,
+  Ollama, OpenRouter, Together, LM Studio and vLLM; any other base URL works too.
+  Requests are streamed, because slow local servers time out long non-streaming requests.
+  The output-length parameter is negotiated (`max_completion_tokens`, falling back to
+  `max_tokens`). `<think>` blocks from open reasoning models are stripped from replies.
+
+Every provider gets the same system prompt, the same three tools and the same kernel.
 Nothing is provider-specific below `src/agent/`.
+
+**Local models.** Ollama's default context window is 4k tokens, and ThoughtSpace's prompt
+plus workspace is bigger than that, so start Ollama with `OLLAMA_CONTEXT_LENGTH=16384`. For
+direct browser access (rather than the dev-server proxy) also set `OLLAMA_ORIGINS=*`:
+
+```bash
+OLLAMA_CONTEXT_LENGTH=16384 ollama serve & ollama pull qwen3:4b
+OPENAI_COMPAT_BASE_URL=http://localhost:11434/v1 OPENAI_COMPAT_MODEL=qwen3:4b npm run dev
+```
 
 ## The journey
 
@@ -70,6 +104,29 @@ Along the way you can zoom the canvas out (objects collapse to their essence) an
 into its scalar arithmetic. Fork the whole workspace (⑂) and diff branches. Undo and redo
 anything (⌘Z / ⇧⌘Z). Open the inspector to see each object's provenance, history, and
 exactly what the AI sees.
+
+## Drawing
+
+![Drawing on ThoughtSpace: lines become a neuron's boundary, coloured dots become data, loops select](docs/media/thoughtspace-ink.gif)
+
+Press **P** (or ✎ Draw) and draw on the paper. Keys **1–4** pick the ink: black, orange,
+blue and violet. As in *Magic Paper*, ink is a first-class object, and where it lands on
+something that understands it, it becomes meaning:
+
+| You draw | It becomes |
+|---|---|
+| a straight line across a single neuron's decision-boundary plot | that neuron's boundary: the weights are solved from your line and oriented to fit the data. On XOR you can feel that no line works |
+| an orange or blue dot on a dataset or boundary plot | a new data point of class 1 or 0 |
+| a loop around objects | a selection, so "this" is what you circled |
+| anything else | ink: a `sketch` object attached to what it was drawn over. It moves with that object, can be undone and inspected, can go into a glyph, and the AI can read it ("what did I just draw on?") |
+
+The renderer turns screen points into data coordinates; the kernel only ever receives
+semantic operations (`add_point`, `set_boundary`, `draw`). The AI draws too, but with
+semantic shapes (`{"op": "draw", "shape": "circle", "target": "plot_5"}`: circle,
+underline, arrow, cross, check), never coordinates. The kernel computes the strokes. In the
+demo above, the offline planner circles the plot it is explaining. In a live test, gpt-5.5
+circled the decision-boundary plot as the reason a single neuron fails. It declined to cross
+out the claim, because the claim was unverified rather than refuted.
 
 ## Architecture
 
@@ -112,6 +169,13 @@ every batch the model submitted and every rejection. The first runs against Open
   placement and metric synonyms. The protocol now accepts these unambiguous forms, and refs
   live for a whole agent turn. That took gpt-4.1 from failing the journey to 0 rejected
   batches.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` typechecks, runs the offline test suite and builds on every push
+and pull request. Starting the workflow by hand with **live** enabled also runs the
+canonical journey against an OpenAI model, using the repository's `OPENAI_API_KEY` secret
+if it is set.
 
 ## Principles the code enforces
 

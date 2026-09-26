@@ -21,9 +21,10 @@ import { RELATION_TYPES } from './types';
 import { coerceParam, defaultParams, kindSpec, KINDS } from './kinds';
 import { reduce } from './reduce';
 import { bbox, findFree, pack, place, placeBlock } from './layout';
-import { datasetFor, labelOf, layersOf, netParams, points, relationsFrom, relationsOf, relationsTo, resolve } from './semantics';
+import { datasetFor, labelOf, layersOf, netParams, points, relationsFrom, relationsOf, relationsTo, resolve, sourceOf } from './semantics';
 import { describeArchitecture } from './semantics';
 import { train } from './nn';
+import { AI_SHAPES, boundaryWeights, classify, INK_COLORS, shapeStrokes, strokeBBox, type AIShape, type InkColor, type Stroke, type XY } from './ink';
 import { formatValue, METRICS, runExperiment, type Expectation, type ExperimentSpec } from './experiment';
 
 export class OpError extends Error {}
@@ -86,6 +87,8 @@ export const OPS: OpDoc[] = [
   { op: 'branch', summary: 'fork objects into an explicit alternative with a stated assumption', args: '{ids, assumption, changes?: [{id, param, value} | {id, action, args}], execute?, label?, ref?}' },
   { op: 'compare', summary: 'create a live comparison of two objects', args: '{a, b, placement?, ref?}' },
   { op: 'annotate', summary: 'attach a note to an object (optionally a sub-part like neuron:1:0)', args: '{target, text, subtarget?, ref?}' },
+  { op: 'draw', summary: 'draw ink on the paper: a circle/underline/arrow/cross/check around objects (persistent, unlike highlight)', args: '{shape: circle|underline|arrow|cross|check, target, to? (arrow end), color?: ink|orange|blue|violet, note?, ref?}' },
+  { op: 'set_boundary', summary: "make a single neuron's decision boundary the line through two input-space points (what drawing a line on its plot does)", args: '{id (network or its plot), from: [x1, x2], to: [x1, x2]}' },
   { op: 'claim', summary: 'state a claim about objects (starts unverified)', args: '{text, about, ref?}' },
   { op: 'verify_claim', summary: 'attach experiment evidence; the claim becomes supported/refuted by the experiment verdict', args: '{claim, evidence}' },
 ];
@@ -103,6 +106,7 @@ const PREFIX: Record<string, string> = {
   claim: 'claim',
   group: 'group',
   glyph: 'glyph',
+  sketch: 'ink',
 };
 
 /** state keys a client may write through modify_object */
@@ -369,6 +373,9 @@ function moveWithMembers(tx: TxBuilder, id: ObjectId, x: number, y: number, op: 
   const dx = x - o.visual.x;
   const dy = y - o.visual.y;
   tx.modify(id, { visual: { ...o.visual, x, y } }, op);
+  // ink drawn on an object travels with it
+  for (const s of Object.values(tx.ws.objects))
+    if (s.kind === 'sketch' && s.state.anchor === id && s.id !== id) tx.modify(s.id, { visual: { ...s.visual, x: s.visual.x + dx, y: s.visual.y + dy } }, op);
   if (o.kind === 'group' || o.kind === 'glyph')
     for (const m of o.state.members as ObjectId[]) {
       const mo = tx.ws.objects[m];
@@ -1006,6 +1013,80 @@ const HANDLERS: Record<string, Handler> = {
     tx.relate('annotates', id, target, 'annotate', op.subtarget ? { subtarget: op.subtarget } : undefined);
     tx.marker('Annotated', target, 'annotate', { note: id });
     tx.setRef(op.ref, id);
+  },
+
+  draw(tx, op) {
+    const color = (op.color ?? (tx.actor === 'ai' ? 'violet' : 'ink')) as InkColor;
+    if (!INK_COLORS.includes(color)) fail(`color: one of ${INK_COLORS.join(', ')}`);
+    let strokes: Stroke[];
+    let shape: string;
+    let anchor: ObjectId | undefined;
+    let to: ObjectId | undefined;
+    const id = tx.newId('ink');
+    if (op.strokes !== undefined) {
+      // the human's own pen: raw geometry is what they drew
+      if (tx.actor === 'ai') fail('draw: the agent draws semantic shapes ({"shape": "circle", "target": id}), not raw strokes');
+      strokes = nonEmptyArray(op.strokes, 'strokes').map((s: any) => {
+        const pts = s?.points;
+        if (!Array.isArray(pts) || pts.length === 0 || pts.length > 4000 || !pts.every((q: unknown) => Array.isArray(q) && q.length === 2 && q.every((n) => typeof n === 'number' && Number.isFinite(n))))
+          fail('strokes: each stroke needs points: [[x, y], …]');
+        return { points: pts.map(([x, y]: XY) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10] as XY) };
+      });
+      if (strokes.length > 40) fail('strokes: at most 40 per drawing');
+      shape = strokes.length === 1 ? classify(strokes[0]) : 'freeform';
+      if (op.over !== undefined) anchor = tx.id(op.over, 'over');
+    } else {
+      if (!AI_SHAPES.includes(op.shape)) fail(`draw: shape must be one of ${AI_SHAPES.join(', ')} (or, for the human pen, raw strokes)`);
+      shape = op.shape;
+      const t = tx.get(tx.id(op.target, 'target'));
+      if (t.visual.hidden) fail(`draw: ${t.label} is inside a collapsed glyph; draw on the glyph`);
+      anchor = t.id;
+      if (op.to !== undefined) {
+        to = tx.id(op.to, 'to');
+        if (shape !== 'arrow') fail('draw: only arrows take "to"');
+      }
+      strokes = shapeStrokes(shape as AIShape, t.visual, to ? tx.get(to).visual : undefined, Number(id.split('_')[1]) * 7919);
+    }
+    const bb = strokeBBox(strokes);
+    const pad = 8;
+    const visual = { x: bb.x - pad, y: bb.y - pad, w: Math.max(16, bb.w + 2 * pad), h: Math.max(16, bb.h + 2 * pad) };
+    const rel = strokes.map((s) => ({ points: s.points.map(([x, y]) => [Math.round((x - visual.x) * 10) / 10, Math.round((y - visual.y) * 10) / 10] as XY) }));
+    tx.createObject(
+      {
+        id,
+        kind: 'sketch',
+        label: anchor ? `Ink on ${tx.get(anchor).label}` : 'Ink',
+        params: {},
+        state: { strokes: rel, color, shape, ...(anchor ? { anchor } : {}), ...(to ? { to } : {}), ...(typeof op.note === 'string' ? { note: op.note.slice(0, 300) } : {}) },
+        visual,
+        provenance: { derivedFrom: [anchor, to].filter((x): x is string => !!x) },
+      },
+      'draw',
+    );
+    if (anchor) tx.relate('annotates', id, anchor, 'draw', { ink: shape });
+    if (to) tx.relate('annotates', id, to, 'draw', { ink: 'arrow end' });
+    tx.marker('Annotated', anchor ?? id, 'draw', { ink: id, shape });
+    tx.setRef(op.ref, id);
+  },
+
+  set_boundary(tx, op) {
+    const o = resolve(tx.ws, tx.id(op.id))!;
+    const net = o.kind === 'graph' || o.kind === 'equation' ? sourceOf(tx.ws, o.id) : o;
+    if (!net || net.kind !== 'neural_network') fail('set_boundary: needs a network (or a plot of one)');
+    if ((net!.params.hidden as number[]).length > 0)
+      fail(`set_boundary: ${net!.label} has hidden layers, so its boundary is a curve built from several lines — draw on a single neuron, or edit the hidden units`);
+    const pt = (v: unknown, what: string): XY => (Array.isArray(v) && v.length === 2 && v.every((n) => typeof n === 'number' && Number.isFinite(n)) ? [v[0], v[1]] : fail(`${what}: expected [x1, x2]`));
+    const from = pt(op.from, 'from');
+    const to = pt(op.to, 'to');
+    const data = points(datasetFor(tx.ws, net!.id));
+    const r = boundaryWeights(from, to, data);
+    if (!r) fail('set_boundary: the two points must differ');
+    tx.modify(net!.id, { state: { ...net!.state, weights: [[r!.w]], biases: [[r!.b]], trainedBy: null, handEdited: true } }, 'set_boundary', 'boundary drawn by hand');
+    const m = data.length ? netParams(tx.get(net!.id)) : undefined;
+    if (m) {
+      const correct = data.filter((p) => (p.x[0] * r!.w[0] + p.x[1] * r!.w[1] + r!.b >= 0 ? 1 : 0) === p.y).length;
+      tx.notes.push(`${net!.label} now has the drawn boundary: ${correct}/${data.length} points on the right side.`);
+    }
   },
 
   claim(tx, op) {
