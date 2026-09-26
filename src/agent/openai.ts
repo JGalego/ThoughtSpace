@@ -148,6 +148,7 @@ async function chatLoop(client: OpenAI, model: string, text: string, host: Agent
     if (calls.length === 0) {
       const said = stripThinking(msg.content ?? '');
       if (said) host.say(said);
+      else if (turn === 0) host.say('The model returned an empty reply without using its tools. Small local models often do; try a larger one.');
       if (choice.finish_reason === 'length') host.say('(reply was cut off)');
       return;
     }

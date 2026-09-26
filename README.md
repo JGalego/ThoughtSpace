@@ -186,6 +186,11 @@ Latest results (the full five-step journey, pass/fail as asserted by the test):
 | gpt-4.1 | Chat Completions | tool calls work; sometimes stops before training its fix to 100% (it reports the shortfall honestly) |
 | qwen3:4b | Ollama, CPU | works, but thinks for thousands of tokens per turn: far too slow on 4 CPU cores. Ollama's OpenAI endpoint can't switch its thinking off |
 | qwen2.5:3b | Ollama, CPU | the connection works end to end (tool call → kernel → reply), but the model is too small to build the construction |
+| qwen2.5:7b | Ollama, CPU | 5½ minutes for the first turn, then an empty reply |
+
+Against Ollama, streamed tool calls, the kernel round trip and the dev-server proxy all
+work. What's missing locally is model capability and speed: on CPU, use the largest
+tool-capable model you can run, or a hosted OpenAI-compatible server such as Groq.
 
 ## Continuous integration
 
