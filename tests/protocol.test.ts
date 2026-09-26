@@ -26,7 +26,10 @@ describe('protocol ergonomics learned from live models', () => {
       'ai',
     );
     expect(r.errors).toEqual([]);
-    expect(k.dispatch([{ op: 'create_object', kind: 'text', placement: { somewhere: 'x' } }], 'ai').ok).toBe(false);
+    // an unusable hint falls back to automatic layout instead of costing the whole batch
+    const u = k.dispatch([{ op: 'create_object', kind: 'text', placement: { somewhere: 'x' } }], 'ai');
+    expect(u.ok).toBe(true);
+    expect(u.notes.join(' ')).toMatch(/placement .* ignored/);
   });
 
   it('maps natural metric and comparison names in experiments', () => {
@@ -181,12 +184,14 @@ describe('expanding a glyph', () => {
 });
 
 describe('placing near a point', () => {
-  it('"around" finds the nearest free spot for the human, and is refused for the AI', () => {
+  it('"around" finds the nearest free spot for the human, and is ignored for the AI', () => {
     const k = new Kernel();
     const a = k.dispatch([{ op: 'create_object', kind: 'dataset', ref: 'd', placement: { at: { x: 100, y: 100 } } }], 'human');
     const b = k.dispatch([{ op: 'create_object', kind: 'text', ref: 't', placement: { around: { x: 200, y: 200 } } }], 'human');
     const D = k.object(a.refs.d)!.visual, T = k.object(b.refs.t)!.visual;
     expect(T.x < D.x + D.w && T.x + T.w > D.x && T.y < D.y + D.h && T.y + T.h > D.y).toBe(false);
-    expect(k.dispatch([{ op: 'create_object', kind: 'text', placement: { around: { x: 0, y: 0 } } }], 'ai').ok).toBe(false);
+    const ai = k.dispatch([{ op: 'create_object', kind: 'text', ref: 'u', placement: { around: { x: 0, y: 0 } } }], 'ai');
+    expect(ai.notes.join(' ')).toMatch(/coordinates ignored/);
+    expect(k.object(ai.refs.u)!.visual).not.toMatchObject({ x: -140, y: -55 });
   });
 });

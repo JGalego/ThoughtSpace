@@ -204,10 +204,18 @@ export class TxBuilder {
     if (typeof p !== 'object') return fail('placement: expected an object like {"beside": "net_1"}');
     const entries = Object.entries(p as object).map(([k, v]) => [PLACEMENT_ALIASES[k] ?? k, v] as const);
     const known = entries.filter(([k]) => ['beside', 'below', 'above', 'left_of', 'near', 'at', 'around'].includes(k));
-    if (known.length === 0) return fail(`placement: use one of beside/below/above/left_of/near (got ${entries.map(([k]) => k).join(', ') || 'nothing'})`);
+    // placement is a layout hint, so a hint we can't use never costs the whole batch:
+    // fall back to automatic layout and say so in the result
+    if (known.length === 0) {
+      this.notes.push(`placement ${JSON.stringify(p)} ignored (use beside/below/above/left_of/near an object id); placed automatically.`);
+      return undefined;
+    }
     const [k, v] = known[0];
     if (k === 'at' || k === 'around') {
-      if (this.actor === 'ai') return fail('placement: the agent places objects semantically (beside/below/…), not by coordinates');
+      if (this.actor === 'ai') {
+        this.notes.push('placement by coordinates ignored: place objects beside/below/above/left_of/near an object id; placed automatically.');
+        return undefined;
+      }
       if (typeof v?.x !== 'number' || typeof v?.y !== 'number') return fail(`placement.${k}: expected {x, y}`);
       return k === 'at' ? { at: { x: v.x, y: v.y } } : { around: { x: v.x, y: v.y } };
     }

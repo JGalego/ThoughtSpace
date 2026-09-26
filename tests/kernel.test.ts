@@ -35,8 +35,9 @@ describe('operations are validated', () => {
 
   it('keeps the AI from using raw coordinates', () => {
     const k = new Kernel();
-    const r = k.dispatch([{ op: 'create_object', kind: 'text', placement: { at: { x: 1, y: 2 } } }], 'ai');
-    expect(r.ok).toBe(false);
+    const r = k.dispatch([{ op: 'create_object', kind: 'text', ref: 't', placement: { at: { x: 1, y: 2 } } }], 'ai');
+    expect(k.object(r.refs.t)!.visual).not.toMatchObject({ x: 1, y: 2 });
+    expect(r.notes.join(' ')).toMatch(/coordinates ignored/);
     expect(k.dispatch([{ op: 'create_object', kind: 'text', placement: { at: { x: 1, y: 2 } } }], 'human').ok).toBe(true);
   });
 
