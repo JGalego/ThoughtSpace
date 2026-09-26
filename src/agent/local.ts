@@ -3,6 +3,7 @@
 // canonical journey run with no network access, and doubles as an executable spec.
 
 import type { Agent, AgentHost } from './host';
+import { openLesson } from './lessons';
 import {
   datasetFor,
   describeArchitecture,
@@ -33,6 +34,7 @@ export const localAgent: Agent = {
   async run(text, host) {
     const t = text.toLowerCase().trim();
     const ctx = new Ctx(host);
+    if (openLesson(text, host)) return;
     for (const intent of INTENTS) {
       if (intent.match(t, ctx)) {
         await intent.run(t, ctx, text);
@@ -40,7 +42,7 @@ export const localAgent: Agent = {
       }
     }
     host.say(
-      "I'm the offline planner, so I only understand a small vocabulary: build an XOR exploration, train, add/remove a layer, switch activation, plot, zoom into a neuron, why doesn't this work, smallest change that works, experiment, what if …, compare, sensitivity, turn into a glyph. Connect Claude (⚙) for open-ended requests.",
+      "I'm the offline planner, so I understand a small vocabulary. Open lessons: type mathematics (\"y = a*x^2 + b\", \"dN/dt = r*N\", \"X ~ randint(1,6)\"), then plot, test a prediction (\"test: y increases as a increases\"), what if a = 3, why; or start a ready-made lesson (projectile, epidemic, Fourier, dice averages, taxes). Neural networks: build an XOR exploration, train, add/remove a layer, switch activation, zoom into a neuron, smallest change that works, experiment, compare, turn into a glyph. Connect a language model (⚙) for anything else.",
     );
   },
 };

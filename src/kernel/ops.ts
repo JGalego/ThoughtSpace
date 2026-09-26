@@ -181,6 +181,9 @@ export class TxBuilder {
     if (this.ws.objects[v]) return v;
     // a ref name written without its "$"
     if (this.refs[v] && this.ws.objects[this.refs[v]]) return this.refs[v];
+    // a variable/formula/system/trials by its name ("theta", "R")
+    const byName = Object.values(this.ws.objects).filter((o) => !o.visual.hidden && isCalc(o) && o.state.name === v);
+    if (byName.length === 1) return byName[0].id;
     const byLabel = Object.values(this.ws.objects).filter((o) => o.label.toLowerCase() === v.toLowerCase());
     if (byLabel.length === 1) return byLabel[0].id;
     return fail(`${what}: no object "${v}"`);

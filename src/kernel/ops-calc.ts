@@ -166,13 +166,15 @@ export function calcPlotParams(tx: TxBuilder, sources: TSObject[], op: Operation
   if (s.kind === 'variable') fail(`plot: a variable is a slider; plot a formula that uses ${s.state.name} against it`);
   if (s.kind === 'formula') {
     // Default x: the slider buried deepest inside functions shapes the curve
-    // (theta in v0^2 sin(2 theta)/g, x in sum(k,1,n, sin(k x)/k)); ties go to
-    // the first mentioned, then to sliders further up the chain.
+    // (theta in v0^2 sin(2 theta)/g, x in sum(k,1,n, sin(k x)/k)); ties go to the
+    // conventional names (x, t, …), then to the first mentioned, then to sliders
+    // further up the chain.
     const behind = [...new Map(sources.flatMap((f) => variablesBehind(tx.ws, f.id)).map((v) => [v.state.name, v])).values()];
     const depth = new Map<string, number>();
     const order: string[] = [];
     for (const f of sources) nameDepths(check(String(f.state.expr)).ast, 0, depth, order);
-    const score = (n: string) => (depth.has(n) ? -1000 * depth.get(n)! + order.indexOf(n) : 1e9);
+    const conventional = ['x', 't', 'theta', 'θ', 'n', 'q'];
+    const score = (n: string) => (depth.has(n) ? -1000 * depth.get(n)! + (conventional.includes(n) ? -100 + conventional.indexOf(n) : 0) + order.indexOf(n) : 1e9);
     behind.sort((a, b) => score(a.state.name) - score(b.state.name));
     const x = typeof op.x === 'string' && op.x ? op.x : behind[0]?.state.name;
     if (!x) fail('plot: this formula depends on no variable, so there is nothing to put on the x-axis');

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Kernel, type BranchDiff, type ObjectId, type Operation, type ink } from '../kernel';
 import { localAgent } from '../agent/local';
+import { LESSON_PROMPTS } from '../agent/lessons';
 import { claudeAgent } from '../agent/claude';
 import { COMPATIBLE_PRESETS, openaiAgent } from '../agent/openai';
 import type { AgentHost } from '../agent/host';
@@ -29,7 +30,7 @@ function readJSON<T>(key: string, fallback: T): T {
   }
 }
 
-const EXAMPLES = ["Let's understand why XOR requires a hidden layer."];
+const EXAMPLES = [...LESSON_PROMPTS, "Let's understand why XOR requires a hidden layer."];
 
 export function App() {
   const version = useKernelVersion(kernel);
@@ -265,7 +266,7 @@ export function App() {
         {empty && (
           <div className="empty-hint">
             <h1>A blank ThoughtSpace.</h1>
-            <p>Start with an idea. The AI builds things you can hold, not paragraphs.</p>
+            <p>Start with an idea, or type some mathematics: <code>y = a*x^2 + b*x + c</code>. The AI builds things you can hold, not paragraphs.</p>
             <div className="chips">
               {EXAMPLES.map((x) => (
                 <button key={x} className="chip" onClick={() => void ask(x, [])}>{x}</button>
