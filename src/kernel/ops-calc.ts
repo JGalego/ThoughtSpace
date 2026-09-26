@@ -6,8 +6,8 @@ import type { ObjectId, Operation, ParamValue, TSObject } from './types';
 import type { TxBuilder } from './ops';
 import { OpError } from './ops';
 import { coerceParam, isIdentifier } from './kinds';
-import { check, ExprError, LANGUAGE_DOC, type Ast } from './expr';
-import { fmt, isCalc, isRandom, measure, neededNames, providedNames, providers, statistics, variablesBehind, type Overrides } from './calc';
+import { check, ExprError, LANGUAGE_DOC } from './expr';
+import { axisCandidates, fmt, isCalc, isRandom, measure, neededNames, providedNames, providers, statistics, variablesBehind, type Overrides } from './calc';
 import { hashString } from './nn';
 
 const fail = (m: string): never => {
@@ -149,33 +149,13 @@ export function describeValue(tx: TxBuilder, o: TSObject): string {
 
 // ------------------------------------------------------------------ plots
 
-function nameDepths(a: Ast, d: number, depth: Map<string, number>, order: string[]): void {
-  if (a.t === 'name') {
-    if (!order.includes(a.n)) order.push(a.n);
-    depth.set(a.n, Math.max(depth.get(a.n) ?? 0, d));
-  } else if (a.t === 'un') nameDepths(a.a, d, depth, order);
-  else if (a.t === 'bin') [a.a, a.b].forEach((x) => nameDepths(x, d, depth, order));
-  else if (a.t === 'cond') [a.c, a.a, a.b].forEach((x) => nameDepths(x, d, depth, order));
-  else if (a.t === 'call') a.args.forEach((x) => nameDepths(x, d + 1, depth, order));
-}
-
 export function calcPlotParams(tx: TxBuilder, sources: TSObject[], op: Operation): { params: Record<string, ParamValue>; label: string } {
   const kinds = new Set(sources.map((s) => s.kind));
   if (kinds.size > 1) fail('plot: plot formulas together, or one system, or one set of trials');
   const s = sources[0];
   if (s.kind === 'variable') fail(`plot: a variable is a slider; plot a formula that uses ${s.state.name} against it`);
   if (s.kind === 'formula') {
-    // Default x: the slider buried deepest inside functions shapes the curve
-    // (theta in v0^2 sin(2 theta)/g, x in sum(k,1,n, sin(k x)/k)); ties go to the
-    // conventional names (x, t, …), then to the first mentioned, then to sliders
-    // further up the chain.
-    const behind = [...new Map(sources.flatMap((f) => variablesBehind(tx.ws, f.id)).map((v) => [v.state.name, v])).values()];
-    const depth = new Map<string, number>();
-    const order: string[] = [];
-    for (const f of sources) nameDepths(check(String(f.state.expr)).ast, 0, depth, order);
-    const conventional = ['x', 't', 'theta', 'θ', 'n', 'q'];
-    const score = (n: string) => (depth.has(n) ? -1000 * depth.get(n)! + (conventional.includes(n) ? -100 + conventional.indexOf(n) : 0) + order.indexOf(n) : 1e9);
-    behind.sort((a, b) => score(a.state.name) - score(b.state.name));
+    const behind = axisCandidates(tx.ws, sources);
     const x = typeof op.x === 'string' && op.x ? op.x : behind[0]?.state.name;
     if (!x) fail('plot: this formula depends on no variable, so there is nothing to put on the x-axis');
     if (!behind.some((v) => v.state.name === x)) fail(`plot: x must be a variable the formula uses: ${behind.map((v) => v.state.name).join(', ')}`);

@@ -3,7 +3,7 @@
 
 import type { ObjectId, Operation, Workspace } from './types';
 import { linearlySeparable, sensitivities } from './nn';
-import { variablesBehind } from './calc';
+import { axisCandidates, variablesBehind } from './calc';
 import { datasetFor, layersOf, netParams, networkMetrics, networks, points, plotsOf, relationsFrom, relationsTo } from './semantics';
 
 export interface Suggestion {
@@ -77,7 +77,7 @@ export function suggestions(ws: Workspace): Suggestion[] {
     if (o.visual.hidden || !['formula', 'system', 'trials'].includes(o.kind) || relationsTo(ws, o.id, 'visualizes').length) continue;
     if (relationsFrom(ws, o.id, 'feeds_into').length && o.kind === 'formula') continue; // an intermediate step
     if (o.kind === 'formula' && variablesBehind(ws, o.id).length)
-      out.push({ key: `curve:${o.id}`, target: o.id, text: `How does ${o.state.name} change as ${variablesBehind(ws, o.id)[0].state.name} moves?`, label: 'Plot it', action: { kind: 'ops', ops: [{ op: 'plot', source: o.id }] } });
+      out.push({ key: `curve:${o.id}`, target: o.id, text: `How does ${o.state.name} change as ${axisCandidates(ws, [o])[0].state.name} moves?`, label: 'Plot it', action: { kind: 'ops', ops: [{ op: 'plot', source: o.id }] } });
     if (o.kind === 'system') out.push({ key: `series:${o.id}`, target: o.id, text: 'Watch it unfold over time.', label: 'Plot over time', action: { kind: 'ops', ops: [{ op: 'plot', source: o.id }] } });
     if (o.kind === 'trials') out.push({ key: `hist:${o.id}`, target: o.id, text: 'What does the spread of outcomes look like?', label: 'Histogram', action: { kind: 'ops', ops: [{ op: 'plot', source: o.id }] } });
   }

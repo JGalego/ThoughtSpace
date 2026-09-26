@@ -385,3 +385,52 @@ export function fmt(x: number | undefined, digits = 3): string {
   if (a !== 0 && (a >= 1e6 || a < 1e-3)) return x.toExponential(2);
   return String(+x.toPrecision(digits + (a >= 100 ? 1 : 0)));
 }
+
+/**
+ * The sliders a plot of these formulas could put on its x-axis, best first. The slider
+ * buried deepest inside functions shapes the curve (theta in v0^2 sin(2 theta)/g, x in
+ * sum(k,1,n, sin(k x)/k)); ties go to conventional names (x, t, …), then to the first
+ * mentioned. Sliders further up the chain follow, the ones that move the value most first,
+ * and the ones that do not move it at all last.
+ */
+export function axisCandidates(ws: Workspace, formulas: TSObject[]): TSObject[] {
+  const behind = [...new Map(formulas.flatMap((f) => variablesBehind(ws, f.id)).map((v) => [v.state.name as string, v])).values()];
+  const depth = new Map<string, number>();
+  const order: string[] = [];
+  for (const f of formulas) {
+    try {
+      nameDepths(ast(String(f.state.expr)), 0, depth, order);
+    } catch {
+      /* an unparsable formula mentions nothing */
+    }
+  }
+  const conventional = ['x', 't', 'theta', 'θ', 'n', 'q'];
+  const influence = (v: TSObject) => {
+    const span = (Number(v.params.max) - Number(v.params.min)) / 10 || 1;
+    let total = 0;
+    for (const f of formulas) {
+      const a = scalarOf(ws, f);
+      const b = scalarOf(ws, f, { [v.state.name]: Number(v.params.value) + span });
+      if (a.ok && b.ok && Number.isFinite(a.value) && Number.isFinite(b.value)) total += Math.abs(b.value - a.value) / (Math.abs(a.value) + 1e-9);
+    }
+    return total;
+  };
+  const score = (v: TSObject) => {
+    const n = v.state.name as string;
+    if (depth.has(n)) return -1e6 * (depth.get(n)! + 1) + (conventional.includes(n) ? -1e5 + conventional.indexOf(n) : 0) + order.indexOf(n);
+    const inf = influence(v);
+    return inf > 1e-12 ? -inf : 1e9;
+  };
+  const scores = new Map(behind.map((v) => [v.id, score(v)]));
+  return behind.sort((a, b) => scores.get(a.id)! - scores.get(b.id)!);
+}
+
+function nameDepths(a: Ast, d: number, depth: Map<string, number>, order: string[]): void {
+  if (a.t === 'name') {
+    if (!order.includes(a.n)) order.push(a.n);
+    depth.set(a.n, Math.max(depth.get(a.n) ?? 0, d));
+  } else if (a.t === 'un') nameDepths(a.a, d, depth, order);
+  else if (a.t === 'bin') [a.a, a.b].forEach((x) => nameDepths(x, d, depth, order));
+  else if (a.t === 'cond') [a.c, a.a, a.b].forEach((x) => nameDepths(x, d, depth, order));
+  else if (a.t === 'call') a.args.forEach((x) => nameDepths(x, d + 1, depth, order));
+}

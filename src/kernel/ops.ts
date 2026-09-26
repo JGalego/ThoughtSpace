@@ -494,7 +494,10 @@ const HANDLERS: Record<string, Handler> = {
     const id = tx.newId(PREFIX[op.kind]);
     const state = spec!.defaultState(params, init);
     const label = op.label !== undefined ? str(op.label, 'label', 80) : calc ? String(state.name) : defaultLabel(tx.ws, op.kind, params);
-    const size = op.kind === 'text' && state.text ? { w: spec!.size.w, h: Math.min(280, 60 + textLines(state.text, 40) * 19) } : spec!.size;
+    const size =
+      op.kind === 'text' && state.text ? { w: spec!.size.w, h: Math.min(280, 60 + textLines(state.text, 40) * 19) }
+      : op.kind === 'system' ? systemSize(state)
+      : spec!.size;
     tx.createObject({ id, kind: op.kind, label, params, state, visual: tx.allocate(size, tx.placement(op.placement)) }, 'create_object');
     tx.setRef(op.ref, id);
     if (op.source !== undefined) {
@@ -1236,6 +1239,13 @@ function calcExperiment(tx: TxBuilder, op: Operation, target: TSObject) {
   tx.marker('ExperimentCompleted', id, 'experiment', { supported: outcome.supported, hash: outcome.hash });
   tx.setRef(op.ref, id);
   tx.notes.push(`Experiment ${id}: ${outcome.conclusion} (results hash ${outcome.hash})`);
+}
+
+/** room for every equation, the outputs and a small preview of the run */
+function systemSize(state: Record<string, any>) {
+  const vars = Array.isArray(state.vars) ? state.vars.length : 1;
+  const helpers = Array.isArray(state.helpers) ? state.helpers.length : 0;
+  return { w: 380, h: Math.max(210, 150 + 30 * (vars + helpers) + 17 * Math.min(4, vars)) };
 }
 
 function glyphSize(exposed: number) {

@@ -102,6 +102,13 @@ describe('ready-made lessons end in a testable prediction', () => {
       expect(h.kernel.state().objects[claim.id].state.status, h.said.join('\n')).toBe(verdict);
     });
 
+  it('plots against the slider that matters when none is written in the formula', async () => {
+    const h = harness();
+    await h.ask(LESSON_PROMPTS[4]);
+    const r = h.kernel.dispatch([{ op: 'plot', source: 'buyer_share', ref: 'p' }], 'human');
+    expect(['b', 'd']).toContain(h.kernel.state().objects[r.refs.p].params.x);
+  });
+
   it('the projectile answer changes with air drag', async () => {
     const h = harness();
     await h.ask(LESSON_PROMPTS[0]);
