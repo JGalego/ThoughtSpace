@@ -3,17 +3,19 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "An AI-native medium for thinking — prototype.",
+  "description": "An AI-native medium for thinking \u2014 prototype.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit -p . && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p .",
-    "test": "vitest run"
+    "test": "vitest run tests/*.test.ts",
+    "test:live": "LIVE=1 vitest run tests/live"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
     "katex": "^0.18.9",
+    "openai": "^7.23.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

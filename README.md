@@ -9,6 +9,11 @@ The idea comes from Michael Nielsen's [*Magic Paper*](https://cognitivemedium.co
 and asks what that medium becomes when the computer understands the semantic structure of
 what's on the page.
 
+![Claude driving ThoughtSpace, with an OpenAI model as the in-app AI](docs/media/thoughtspace-demo.gif)
+
+*Claude drives the UI; the in-app AI is OpenAI gpt-5.5. Waits on the model are sped up.
+Regenerate with `scripts/record-demo.mjs` and `scripts/make-gif.py`.*
+
 This first prototype is about one domain, small neural networks, and one journey:
 *why does XOR need a hidden layer?*
 
@@ -18,13 +23,23 @@ This first prototype is about one domain, small neural networks, and one journey
 npm install
 npm run dev            # http://localhost:5173 — works offline with the deterministic planner
 ANTHROPIC_API_KEY=sk-ant-… npm run dev   # Claude participates; the key stays on the dev server
-npm test               # kernel, journey and agent-loop tests
+OPENAI_API_KEY=sk-… npm run dev          # an OpenAI model participates, same way
+npm test               # kernel, protocol, journey and agent-loop tests (offline)
+LIVE=1 OPENAI_MODEL=gpt-5.5 npm run test:live   # the whole journey against a real model
 ```
 
-You can also paste your own API key in the ⚙ menu. It is kept in your browser and sent
-straight to the API. The default model is `claude-opus-5` with adaptive thinking. Claude
-requests enable the API's server-side refusal fallback (`fallbacks: "default"`), and if an
-account rejects that beta, the request is retried once without it.
+Choose the AI participant in the ⚙ menu: the offline planner, Claude, or OpenAI. For each
+provider you can use the dev server's key or paste your own, which is kept in your browser
+and sent straight to that provider. You can also set the model there.
+
+- **Claude** defaults to `claude-opus-5` with adaptive thinking. Requests enable the API's
+  server-side refusal fallback (`fallbacks: "default"`), and if an account rejects that
+  beta, the request is retried once without it.
+- **OpenAI** defaults to `gpt-5.5` and uses the Responses API with function tools. Newer
+  models reject tools combined with reasoning on Chat Completions.
+
+Both providers get the same system prompt, the same three tools and the same kernel.
+Nothing is provider-specific below `src/agent/`.
 
 ## The journey
 
@@ -72,15 +87,31 @@ Claude agent ────┘     validate · compile      (seeded MLP training, 
   branches, undo/redo, diff), `nn.ts` + `experiment.ts` (the deterministic executor),
   `layout.ts` (semantic placement → coordinates), `suggest.ts` (contextual noticers),
   `formulas.ts` (live equations), `view.ts` (the semantic view the AI gets).
-- `src/agent/`: two clients of the kernel that share one host interface. `local.ts` is a
-  deterministic planner for the canonical vocabulary. `claude.ts` is a tool-use loop
-  (`apply_operations`, `inspect`, `highlight`) in which kernel validation errors are
-  returned to Claude as tool errors.
+- `src/agent/`: clients of the kernel that share one host interface. `local.ts` is a
+  deterministic planner for the canonical vocabulary. `shared.ts` holds what every LLM
+  participant shares: the system prompt, the three tools (`apply_operations`, `inspect`,
+  `highlight`), and their execution, where kernel validation errors go back to the model as
+  tool errors. `claude.ts` and `openai.ts` are thin provider loops over it.
 - `src/ui/`: renderers are pure projections of semantic state. There is one per kind,
   inside a generic frame.
 
 The full design (domain model, object schema, protocol, events, rendering, execution
 boundary, demo, and scope) is in [`docs/DESIGN.md`](docs/DESIGN.md).
+
+## Testing with real models
+
+`tests/live/journey.live.test.ts` runs the canonical journey through a real model and logs
+every batch the model submitted and every rejection. The first runs against OpenAI models
+(gpt-4.1, gpt-5.4-mini, gpt-5.5) exposed real problems, which are now fixed:
+
+- **Responses API:** newer models refuse function tools with reasoning on Chat Completions.
+- **Evidence bug:** an experiment with no testable expectations was counted as refuting a
+  claim. Such experiments are now *inconclusive* and can't verify anything. Expectations
+  can also compare two variants (`"than"`).
+- **Friction:** models wrote refs without `$`, reused refs across batches, and used
+  placement and metric synonyms. The protocol now accepts these unambiguous forms, and refs
+  live for a whole agent turn. That took gpt-4.1 from failing the journey to 0 rejected
+  batches.
 
 ## Principles the code enforces
 

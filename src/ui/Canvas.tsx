@@ -301,7 +301,10 @@ function Relations({ ws, pending }: { ws: Workspace; pending: { from: string; x:
       <g key={r.id}>
         <path className={r.type} d={d.path} markerEnd={r.type === 'feeds_into' || r.type === 'visualizes' ? 'url(#arrow)' : undefined} />
         {r.type === 'branched_from' && typeof r.meta?.assumption === 'string' && (
-          <text x={d.mx} y={d.my - 6} textAnchor="middle">{r.meta.assumption as string}</text>
+          <text x={d.mx} y={d.my - 6} textAnchor="middle">
+            {(r.meta.assumption as string).length > 34 ? `${(r.meta.assumption as string).slice(0, 33)}…` : (r.meta.assumption as string)}
+            <title>{r.meta.assumption as string}</title>
+          </text>
         )}
       </g>,
     );

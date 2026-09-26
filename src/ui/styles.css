@@ -206,6 +206,8 @@ pre.json { font: 10.5px/1.4 var(--mono); background: #f7f6f2; padding: 8px; bord
 .msg.user { align-self: flex-end; background: #2b2b28; color: #f6f5f1; border-color: #2b2b28; }
 .msg.ai { border-left: 3px solid var(--ai); }
 .msg.system { color: var(--ink-3); font-size: 11.5px; background: transparent; border: none; box-shadow: none; padding: 0 4px; }
+.msg code { background: rgba(0,0,0,.05); border-radius: 3px; padding: 0 3px; }
+.msg.user code { background: rgba(255,255,255,.15); }
 .msg .ops { display: block; color: var(--ink-3); font-size: 11px; margin-top: 2px; font-family: var(--mono); }
 .bar { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line-2); border-radius: 14px; padding: 6px 6px 6px 10px; box-shadow: 0 8px 28px rgba(0,0,0,.08); }
 .bar input { flex: 1; border: none; outline: none; font-size: 14px; padding: 6px 2px; background: transparent; min-width: 0; }

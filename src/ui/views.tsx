@@ -320,7 +320,7 @@ function ExperimentView({ o }: { o: TSObject }) {
       <div className="row" style={{ flexWrap: 'wrap' }}>
         {(s.verdicts as any[]).map((v, i) => (
           <span key={i} className={`pill ${v.holds ? 'ok' : 'bad'}`} title={`observed ${JSON.stringify(v.observed)}`}>
-            {v.holds ? '✓' : '✗'} {v.expectation.value !== undefined ? `${formatValue(v.expectation.value)}: ` : ''}{v.expectation.metric} {v.expectation.op} {v.expectation.threshold}
+            {v.holds ? '✓' : '✗'} {v.expectation.value !== undefined ? `${formatValue(v.expectation.value)}: ` : ''}{v.expectation.metric} {v.expectation.op} {v.expectation.than !== undefined ? formatValue(v.expectation.than) : v.expectation.threshold}
           </span>
         ))}
       </div>
@@ -501,7 +501,7 @@ export const RENDERERS: Record<string, Renderer> = {
   equation: { body: EquationView },
   text: { body: TextView },
   simulation: { body: SimulationView, glance: (o) => <><b>{Math.round(o.state.result.finalAccuracy * 100)}%</b>loss {o.state.result.finalLoss}</> },
-  experiment: { body: ExperimentView, glance: (o) => <><b>{o.state.supported ? '✓' : '✗'}</b>{o.state.hypothesis.text.slice(0, 60)}</> },
+  experiment: { body: ExperimentView, glance: (o) => <><b>{o.state.supported === null ? '?' : o.state.supported ? '✓' : '✗'}</b>{o.state.hypothesis.text.slice(0, 60)}</> },
   comparison: { body: ComparisonView, glance: () => <><b>⇄</b>comparison</> },
   claim: { body: ClaimView },
   group: { body: GroupView },

@@ -12,7 +12,10 @@ export interface Expectation {
   value?: unknown;
   metric: Metric;
   op: '<' | '<=' | '>' | '>=' | '==';
-  threshold: number;
+  /** a fixed number to compare against … */
+  threshold?: number;
+  /** … or another value of the variable: "hidden [2] has higher mean_accuracy than []" */
+  than?: unknown;
 }
 
 export interface ExperimentSpec {
@@ -49,7 +52,7 @@ export interface Verdict {
 export interface ExperimentOutcome {
   results: ValueResult[];
   verdicts: Verdict[];
-  supported: boolean;
+  supported: boolean | null;
   conclusion: string;
   hash: string;
   constants: Record<string, unknown>;
@@ -79,10 +82,12 @@ export function runExperiment(spec: ExperimentSpec): ExperimentOutcome {
   const verdicts: Verdict[] = spec.hypothesis.expect.map((e) => {
     const rel = results.filter((r) => e.value === undefined || JSON.stringify(r.value) === JSON.stringify(e.value));
     const observed = rel.map((r) => r.summary[e.metric]);
-    const holds = rel.length > 0 && observed.every((v) => v !== null && compare(v, e.op, e.threshold));
+    const other = e.than !== undefined ? results.find((r) => JSON.stringify(r.value) === JSON.stringify(e.than))?.summary[e.metric] : e.threshold;
+    const holds = rel.length > 0 && other !== undefined && other !== null && observed.every((v) => v !== null && compare(v, e.op, other));
     return { expectation: e, holds, observed };
   });
-  const supported = verdicts.length > 0 && verdicts.every((v) => v.holds);
+  // no testable expectation ⇒ inconclusive (null), never evidence either way
+  const supported = verdicts.length > 0 ? verdicts.every((v) => v.holds) : null;
 
   const constants: Record<string, unknown> = {
     dataset: spec.datasetId,
@@ -137,11 +142,11 @@ export function formatValue(v: unknown): string {
   return String(v);
 }
 
-function conclude(spec: ExperimentSpec, results: ValueResult[], verdicts: Verdict[], supported: boolean): string {
+function conclude(spec: ExperimentSpec, results: ValueResult[], verdicts: Verdict[], supported: boolean | null): string {
   const parts = results.map(
     (r) => `${formatValue(r.value)}: ${Math.round((r.summary.success_rate ?? 0) * spec.seeds.length)}/${spec.seeds.length} seeds converged, best accuracy ${Math.round((r.summary.best_accuracy ?? 0) * 100)}%`,
   );
-  const verdict = verdicts.length ? (supported ? 'Hypothesis supported.' : 'Hypothesis not supported.') : 'No testable expectation was given.';
+  const verdict = verdicts.length ? (supported ? 'Hypothesis supported.' : 'Hypothesis not supported.') : 'Inconclusive: no testable expectation was given.';
   return `${parts.join('; ')}. ${verdict}`;
 }
 

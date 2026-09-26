@@ -51,39 +51,64 @@ export function place(
       ? pending[pending.length - 1]
       : undefined;
 
-  if (!a) {
-    // first free slot scanning rows from the origin
-    for (let row = 0; row < 40; row++)
-      for (let col = 0; col < 8; col++) {
-        const r = { x: 80 + col * 60, y: 80 + row * 60, w, h };
-        if (free(r, taken)) return r;
-      }
-    return { x: 80, y: 80, w, h };
-  }
+  if (!a) return nearestFree({ x: 80, y: 80, w, h }, taken, 'below');
 
   const dir: 'right' | 'below' | 'above' | 'left' =
     placement && 'below' in placement ? 'below' : placement && 'above' in placement ? 'above' : placement && 'left_of' in placement ? 'left' : 'right';
+  const ideal: Rect =
+    dir === 'right' ? { x: a.x + a.w + GAP, y: a.y, w, h }
+    : dir === 'left' ? { x: a.x - w - GAP, y: a.y, w, h }
+    : dir === 'below' ? { x: a.x, y: a.y + a.h + GAP, w, h }
+    : { x: a.x, y: a.y - h - GAP, w, h };
+  return nearestFree(ideal, taken, dir);
+}
 
+/**
+ * The free position closest to the ideal one. Searches square rings of growing radius
+ * on a 24px grid, so it always terminates with a non-overlapping spot; moving along the
+ * requested direction is slightly cheaper than moving against it.
+ */
+export function nearestFree(ideal: Rect, taken: Rect[], dir: 'right' | 'below' | 'above' | 'left'): VisualState {
   const step = 24;
-  for (let k = 0; k < 60; k++) {
-    let r: Rect;
-    switch (dir) {
-      case 'right':
-        r = { x: a.x + a.w + GAP + (k >= 20 ? (k - 20) * step : 0), y: a.y + (k < 20 ? k * step : 0), w, h };
-        break;
-      case 'left':
-        r = { x: a.x - w - GAP - (k >= 20 ? (k - 20) * step : 0), y: a.y + (k < 20 ? k * step : 0), w, h };
-        break;
-      case 'below':
-        r = { x: a.x + (k < 20 ? k * step : 0), y: a.y + a.h + GAP + (k >= 20 ? (k - 20) * step : 0), w, h };
-        break;
-      case 'above':
-        r = { x: a.x + (k < 20 ? k * step : 0), y: a.y - h - GAP - (k >= 20 ? (k - 20) * step : 0), w, h };
-        break;
-    }
-    if (free(r, taken)) return r;
+  if (free(ideal, taken)) return { ...ideal };
+  const along = { right: [1, 0], left: [-1, 0], below: [0, 1], above: [0, -1] }[dir];
+  for (let ring = 1; ring < 400; ring++) {
+    let best: Rect | undefined;
+    let bestCost = Infinity;
+    for (let i = -ring; i <= ring; i++)
+      for (const [dx, dy] of [[i, -ring], [i, ring], [-ring, i], [ring, i]]) {
+        const r = { ...ideal, x: ideal.x + dx * step, y: ideal.y + dy * step };
+        const backwards = Math.max(0, -(dx * along[0] + dy * along[1]));
+        const cost = Math.hypot(dx, dy) + backwards * 0.6;
+        if (cost < bestCost && free(r, taken)) {
+          best = r;
+          bestCost = cost;
+        }
+      }
+    if (best) return best;
   }
-  return { x: a.x + a.w + GAP, y: a.y, w, h };
+  return { ...ideal };
+}
+
+/**
+ * Tidy relative layout for a construction: keep reading order (top-to-bottom, then
+ * left-to-right) and flow objects into rows no wider than maxW.
+ */
+export function pack(objs: { id: ObjectId; visual: Rect }[], maxW = 1000, gap = 36): Record<ObjectId, { x: number; y: number }> {
+  const order = [...objs].sort((a, b) => a.visual.y - b.visual.y || a.visual.x - b.visual.x);
+  const out: Record<ObjectId, { x: number; y: number }> = {};
+  let x = 0, y = 0, rowH = 0;
+  for (const o of order) {
+    if (x > 0 && x + o.visual.w > maxW) {
+      x = 0;
+      y += rowH + gap;
+      rowH = 0;
+    }
+    out[o.id] = { x, y };
+    x += o.visual.w + gap;
+    rowH = Math.max(rowH, o.visual.h);
+  }
+  return out;
 }
 
 export function bbox(objs: { visual: Rect }[]): Rect {
@@ -98,15 +123,9 @@ export function bbox(objs: { visual: Rect }[]): Rect {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
-/** Nearest free position for a block, scanning downward then rightward from its preferred spot. */
+/** Nearest free position for a block near its preferred spot, ignoring some objects. */
 export function findFree(ws: Workspace, block: Rect, ignore: Set<ObjectId>): { x: number; y: number } {
-  const taken = occupied(ws, [], ignore);
-  for (let col = 0; col < 12; col++)
-    for (let row = 0; row < 16; row++) {
-      const r = { ...block, x: block.x + col * 60, y: block.y + row * 40 };
-      if (free(r, taken)) return r;
-    }
-  return block;
+  return nearestFree(block, occupied(ws, [], ignore), 'below');
 }
 
 /** Place a set of objects (a sub-graph) as a block to the right of / below its original. */

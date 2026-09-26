@@ -7,7 +7,7 @@ export interface AgentHost {
   kernel: Kernel;
   selection(): ObjectId[];
   /** submit a validated batch as the AI */
-  apply(ops: Operation[], summary?: string): OpResult;
+  apply(ops: Operation[], summary?: string, refs?: Record<string, ObjectId>): OpResult;
   /** transient emphasis on objects or sub-parts: "net_2", "net_2#neuron:1:0", "net_2#edge:0:0:1" */
   highlight(targets: string[], note?: string): void;
   /** bring objects into view */

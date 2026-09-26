@@ -11,6 +11,8 @@ export interface DispatchOptions {
   /** consecutive transactions with the same key (and actor) collapse into one — e.g. dragging a weight */
   coalesceKey?: string;
   summary?: string;
+  /** $ref names bound by earlier batches (an agent's turn spans several batches) */
+  refs?: Record<string, ObjectId>;
 }
 
 export interface BranchDiff {
@@ -119,7 +121,7 @@ export class Kernel {
     const baseIndex = coalesce ? b.cursor - 1 : b.cursor;
     const base = this.stateAt(this.current, baseIndex);
     const txId = coalesce ? last!.id : `tx_${Date.now().toString(36)}_${++this.txCounter}`;
-    const tx = new TxBuilder(base, actor, txId, Date.now());
+    const tx = new TxBuilder(base, actor, txId, Date.now(), opts.refs);
     const errors: string[] = [];
     if (!Array.isArray(ops) || ops.length === 0) errors.push('expected a non-empty list of operations');
     else

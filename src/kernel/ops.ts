@@ -20,13 +20,35 @@ import type {
 import { RELATION_TYPES } from './types';
 import { coerceParam, defaultParams, kindSpec, KINDS } from './kinds';
 import { reduce } from './reduce';
-import { bbox, findFree, place, placeBlock } from './layout';
+import { bbox, findFree, pack, place, placeBlock } from './layout';
 import { datasetFor, labelOf, layersOf, netParams, points, relationsFrom, relationsOf, relationsTo, resolve } from './semantics';
 import { describeArchitecture } from './semantics';
 import { train } from './nn';
 import { formatValue, METRICS, runExperiment, type Expectation, type ExperimentSpec } from './experiment';
 
 export class OpError extends Error {}
+
+const PLACEMENT_ALIASES: Record<string, string> = {
+  right_of: 'beside', right: 'beside', next_to: 'beside', besides: 'beside', after: 'beside',
+  left: 'left_of', before: 'left_of',
+  under: 'below', beneath: 'below', bottom: 'below',
+  over: 'above', top: 'above', on_top_of: 'above',
+  close_to: 'near', by: 'near',
+};
+
+const METRIC_ALIASES: Record<string, string> = {
+  success: 'success_rate', converged: 'success_rate', convergence_rate: 'success_rate', convergence: 'success_rate', solve_rate: 'success_rate',
+  loss: 'mean_final_loss', final_loss: 'mean_final_loss', mean_loss: 'mean_final_loss',
+  accuracy: 'mean_accuracy', final_accuracy: 'mean_accuracy', acc: 'mean_accuracy', max_accuracy: 'best_accuracy',
+  converged_at: 'mean_converged_at', convergence_epoch: 'mean_converged_at', epochs_to_converge: 'mean_converged_at',
+  grad_norm: 'mean_grad_norm', gradient_norm: 'mean_grad_norm',
+};
+
+const OP_ALIASES: Record<string, string> = {
+  lt: '<', less_than: '<', lte: '<=', le: '<=', '≤': '<=', at_most: '<=',
+  gt: '>', greater_than: '>', gte: '>=', ge: '>=', '≥': '>=', at_least: '>=',
+  eq: '==', '=': '==', '===': '==', equals: '==',
+};
 
 const fail = (msg: string): never => {
   throw new OpError(msg);
@@ -56,10 +78,10 @@ export const OPS: OpDoc[] = [
   { op: 'abstract', summary: 'turn a construction into a reusable glyph', args: '{ids, name, expose?: [{id, param, name?}], output?, description?, ref?}' },
   { op: 'expand', summary: 'expand/collapse a glyph to show its construction', args: '{id, expanded?}' },
   { op: 'instantiate_glyph', summary: 'create a new instance of a glyph from the library', args: '{definition, placement?, ref?}' },
-  { op: 'execute', summary: 'train a network deterministically (creates/updates a training-run object)', args: '{id}' },
+  { op: 'execute', summary: 'train a network deterministically (creates/updates a training-run object)', args: '{id, ref?} (ref names the training run)' },
   { op: 'plot', summary: 'create a graph visualizing an object', args: '{source, mode?, weight?, placement?, ref?}' },
   { op: 'zoom_into', summary: 'semantic zoom: a linked equation one level down', args: '{id, form: "neuron"|"boundary"|"network"|"arithmetic", focus?: "L:J", input?: "x1,x2", ref?}' },
-  { op: 'experiment', summary: 'run a controlled, reproducible experiment on a network', args: '{target, hypothesis: {text, expect?: [{value?, metric, op, threshold}]}, variable: {param, values}, seeds?, ref?}' },
+  { op: 'experiment', summary: 'run a controlled, reproducible experiment on a network', args: '{target, hypothesis: {text, expect?: [{value?, metric, op, threshold}]}, variable: {param: hidden|activation|learningRate|epochs, values}, seeds?, ref?} — each expectation compares the metric of one value with a threshold or with another value (than); metric: success_rate|mean_final_loss|best_accuracy|mean_accuracy|mean_converged_at|mean_grad_norm; op: < <= > >= ==. Without expectations an experiment is inconclusive and cannot verify claims' },
   { op: 'reproduce', summary: 're-run an experiment and check its results hash', args: '{id}' },
   { op: 'branch', summary: 'fork objects into an explicit alternative with a stated assumption', args: '{ids, assumption, changes?: [{id, param, value} | {id, action, args}], execute?, label?, ref?}' },
   { op: 'compare', summary: 'create a live comparison of two objects', args: '{a, b, placement?, ref?}' },
@@ -109,9 +131,12 @@ export class TxBuilder {
     readonly actor: ActorKind,
     readonly txId: string,
     readonly at: number,
+    /** names bound by earlier batches in the same agent turn */
+    seedRefs: Record<string, ObjectId> = {},
   ) {
     this.ws = base;
     this.counter = base.counter;
+    for (const [k, v] of Object.entries(seedRefs)) if (base.objects[v]) this.refs[k] = v;
   }
 
   newId(prefix: string): string {
@@ -137,11 +162,13 @@ export class TxBuilder {
   id(v: unknown, what = 'object'): ObjectId {
     if (typeof v !== 'string' || v === '') return fail(`${what}: expected an object id`);
     if (v.startsWith('$')) {
-      const r = this.refs[v.slice(1)];
+      const r = this.refs[v.slice(1).replace(/^ref:/, '')];
       if (!r) return fail(`${what}: unknown reference ${v}`);
       return r;
     }
     if (this.ws.objects[v]) return v;
+    // a ref name written without its "$"
+    if (this.refs[v] && this.ws.objects[this.refs[v]]) return this.refs[v];
     const byLabel = Object.values(this.ws.objects).filter((o) => o.label.toLowerCase() === v.toLowerCase());
     if (byLabel.length === 1) return byLabel[0].id;
     return fail(`${what}: no object "${v}"`);
@@ -153,18 +180,29 @@ export class TxBuilder {
 
   placement(p: unknown): SemanticPlacement | undefined {
     if (p === undefined || p === null) return undefined;
+    // forgiving but unambiguous forms: "net_1", "below net_1", "below:net_1"
+    if (typeof p === 'string') {
+      const m = p.trim().match(/^(?:([a-z_]+)[\s:]+)?(\S+)$/i);
+      if (!m) return fail('placement: expected {"beside": "net_1"}');
+      p = { [m[1] ?? 'beside']: m[2] };
+    }
     if (typeof p !== 'object') return fail('placement: expected an object like {"beside": "net_1"}');
-    const keys = Object.keys(p as object);
-    if (keys.length !== 1) return fail('placement: exactly one of beside/below/above/left_of/near/at');
-    const k = keys[0];
-    const v = (p as any)[k];
+    const entries = Object.entries(p as object).map(([k, v]) => [PLACEMENT_ALIASES[k] ?? k, v] as const);
+    const known = entries.filter(([k]) => ['beside', 'below', 'above', 'left_of', 'near', 'at'].includes(k));
+    if (known.length === 0) return fail(`placement: use one of beside/below/above/left_of/near (got ${entries.map(([k]) => k).join(', ') || 'nothing'})`);
+    const [k, v] = known[0];
     if (k === 'at') {
       if (this.actor === 'ai') return fail('placement: the agent places objects semantically (beside/below/…), not by coordinates');
       if (typeof v?.x !== 'number' || typeof v?.y !== 'number') return fail('placement.at: expected {x, y}');
       return { at: { x: v.x, y: v.y } };
     }
-    if (!['beside', 'below', 'above', 'left_of', 'near'].includes(k)) return fail(`placement: unknown relation "${k}"`);
-    return { [k]: this.id(v, `placement.${k}`) } as SemanticPlacement;
+    // placement is a layout hint: an anchor that doesn't resolve falls back to automatic layout
+    try {
+      return { [k]: this.id(v, `placement.${k}`) } as SemanticPlacement;
+    } catch (e) {
+      if (e instanceof OpError) return undefined;
+      throw e;
+    }
   }
 
   allocate(size: { w: number; h: number }, p: SemanticPlacement | undefined): VisualState {
@@ -522,12 +560,15 @@ const HANDLERS: Record<string, Handler> = {
     if (!RELATION_TYPES.includes(type)) fail(`relation: one of ${RELATION_TYPES.join(', ')}`);
     if (from === to) fail('connect: an object cannot relate to itself');
     if (Object.values(tx.ws.relations).some((r) => r.from === from && r.to === to && r.type === type)) fail('connect: that relation already exists');
-    const a = tx.get(from);
-    const b = resolve(tx.ws, to) ?? tx.get(to);
+    let a = tx.get(from);
+    let b = resolve(tx.ws, to) ?? tx.get(to);
     if (type === 'feeds_into') {
+      // data flows one way only; a reversed edge is unambiguous, so straighten it
+      const back = resolve(tx.ws, from);
+      if (back?.kind === 'neural_network' && tx.get(to).kind === 'dataset') [a, b] = [tx.get(to), back];
       if (a.kind !== 'dataset' || b.kind !== 'neural_network') fail('feeds_into: connects a dataset (data) to a network (data input)');
       for (const r of relationsTo(tx.ws, b.id, 'feeds_into')) tx.unrelate(r.id, 'connect');
-      tx.relate('feeds_into', from, b.id, 'connect');
+      tx.relate('feeds_into', a.id, b.id, 'connect');
       return;
     }
     if (type === 'visualizes') {
@@ -562,7 +603,8 @@ const HANDLERS: Record<string, Handler> = {
 
   group(tx, op) {
     const ids = nonEmptyArray(op.ids, 'ids').map((v) => tx.id(v));
-    for (const i of ids) if (tx.get(i).parent) fail(`${i} already belongs to ${tx.get(i).parent}`);
+    for (const i of ids) leaveGroup(tx, i, 'group');
+    for (const i of ids) if (tx.get(i).parent) fail(`${i} is inside glyph ${tx.get(i).parent}; group the glyph instead`);
     const bb = bbox(ids.map((i) => tx.get(i)));
     const id = tx.newId('group');
     tx.createObject(
@@ -583,8 +625,17 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   abstract(tx, op) {
-    const ids = [...new Set(nonEmptyArray(op.ids, 'ids').map((v) => tx.id(v)))];
+    let ids = [...new Set(nonEmptyArray(op.ids, 'ids').map((v) => tx.id(v)))];
     const name = str(op.name, 'name', 60);
+    // data that also feeds objects outside the construction stays outside: it becomes the
+    // glyph's data input instead of vanishing from the objects that still depend on it
+    const shared = ids.filter((i) => tx.get(i).kind === 'dataset' && relationsFrom(tx.ws, i, 'feeds_into').some((r) => !ids.includes(r.to)));
+    if (shared.length && shared.length < ids.length) {
+      ids = ids.filter((i) => !shared.includes(i));
+      tx.notes.push(`Kept ${shared.map((i) => tx.get(i).label).join(', ')} outside the glyph: other objects still use it, so it feeds the glyph's data input.`);
+    }
+    // objects framed by a plain group leave that group to join the abstraction
+    for (const i of ids) leaveGroup(tx, i, 'abstract');
     const members = ids.map((i) => tx.get(i));
     for (const m of members) {
       if (m.parent) fail(`${m.label} already belongs to ${labelOf(tx.ws, m.parent)}`);
@@ -620,7 +671,10 @@ const HANDLERS: Record<string, Handler> = {
       id: defId,
       name,
       description: typeof op.description === 'string' ? op.description : `${name}: ${members.map((m) => m.label).join(', ')}`,
-      objects: members.map((m) => ({ ...structuredClone(m), visual: { ...m.visual, x: m.visual.x - bb.x, y: m.visual.y - bb.y } })),
+      objects: (() => {
+        const packed = pack(members);
+        return members.map((m) => ({ ...structuredClone(m), visual: { ...m.visual, ...packed[m.id] } }));
+      })(),
       relations: internal.map((r) => structuredClone(r)),
       exposed,
       output: outputId,
@@ -630,7 +684,7 @@ const HANDLERS: Record<string, Handler> = {
       sourceGlyph: glyphId,
     };
     tx.emit({ type: 'GlyphDefined', definition, ...tx.base('abstract') });
-    const size = sizeFor('glyph');
+    const size = glyphSize(exposed.length);
     tx.createObject(
       {
         id: glyphId,
@@ -638,7 +692,8 @@ const HANDLERS: Record<string, Handler> = {
         label: name,
         params: {},
         state: { name, definition: defId, members: ids, exposed, output: outputId, dataInput: inputs.some((i) => i.member === outputId) || (!!outputId && !datasetFor(tx.ws, outputId)) },
-        visual: { x: bb.x, y: bb.y, w: size.w, h: size.h, expanded: false },
+        // the card takes the construction's place, or the nearest free spot to it
+        visual: { ...findFree(tx.ws, { x: bb.x, y: bb.y, w: size.w, h: size.h }, new Set(ids)), w: size.w, h: size.h, expanded: false },
         provenance: { derivedFrom: ids, note: 'abstraction; the construction is preserved inside' },
       },
       'abstract',
@@ -662,11 +717,10 @@ const HANDLERS: Record<string, Handler> = {
     const members = (g.state.members as ObjectId[]).map((m) => tx.get(m));
     if (expanded) {
       // lay the construction out just below the glyph card
-      const bb = bbox(members);
-      const spot = findFree(tx.ws, { ...bb, x: g.visual.x, y: g.visual.y + g.visual.h + 40 }, new Set([id, ...members.map((m) => m.id)]));
-      const dx = spot.x - bb.x;
-      const dy = spot.y - bb.y;
-      for (const m of members) tx.modify(m.id, { visual: { ...m.visual, x: m.visual.x + dx, y: m.visual.y + dy, hidden: false } }, 'expand');
+      const packed = pack(members);
+      const bb = bbox(members.map((m) => ({ visual: { ...m.visual, ...packed[m.id] } })));
+      const spot = findFree(tx.ws, { ...bb, x: g.visual.x, y: g.visual.y + g.visual.h + 40 }, new Set([...members.map((m) => m.id)]));
+      for (const m of members) tx.modify(m.id, { visual: { ...m.visual, x: spot.x + packed[m.id].x, y: spot.y + packed[m.id].y, hidden: false } }, 'expand');
     } else for (const m of members) tx.modify(m.id, { visual: { ...m.visual, hidden: true } }, 'expand');
   },
 
@@ -674,7 +728,7 @@ const HANDLERS: Record<string, Handler> = {
     const key = str(op.definition, 'definition', 80);
     const def = tx.ws.glyphs[key] ?? Object.values(tx.ws.glyphs).find((d) => d.name.toLowerCase() === key.toLowerCase());
     if (!def) fail(`no glyph definition "${key}". Library: ${Object.values(tx.ws.glyphs).map((d) => d.name).join(', ') || 'empty'}`);
-    const size = sizeFor('glyph');
+    const size = glyphSize(def!.exposed.length);
     const v = tx.allocate(size, tx.placement(op.placement));
     const glyphId = tx.newId('glyph');
     const map: Record<string, string> = {};
@@ -728,7 +782,7 @@ const HANDLERS: Record<string, Handler> = {
     const o = tx.get(id);
     if (o.kind === 'experiment') return HANDLERS.reproduce(tx, op);
     const target = resolve(tx.ws, id)!;
-    executeNetwork(tx, target.id, 'execute');
+    tx.setRef(op.ref, executeNetwork(tx, target.id, 'execute'));
   },
 
   plot(tx, op) {
@@ -780,10 +834,14 @@ const HANDLERS: Record<string, Handler> = {
     const hypothesis = { text: str(typeof h === 'string' ? h : h?.text, 'hypothesis.text', 400), expect: [] as Expectation[] };
     if (h && typeof h === 'object' && h.expect !== undefined) {
       hypothesis.expect = nonEmptyArray(h.expect, 'hypothesis.expect').map((e: any) => {
+        if (e && typeof e === 'object') {
+          e = { ...e, metric: METRIC_ALIASES[e.metric] ?? e.metric, op: OP_ALIASES[e.op] ?? e.op };
+          if (typeof e.threshold === 'string' && e.threshold.trim() !== '' && Number.isFinite(Number(e.threshold))) e.threshold = Number(e.threshold);
+        }
         if (!METRICS.includes(e?.metric)) fail(`expect.metric: one of ${METRICS.join(', ')}`);
         if (!['<', '<=', '>', '>=', '=='].includes(e?.op)) fail('expect.op: < <= > >= ==');
-        if (typeof e?.threshold !== 'number') fail('expect.threshold: number');
-        return { ...(e.value !== undefined ? { value: e.value } : {}), metric: e.metric, op: e.op, threshold: e.threshold };
+        if (e.than === undefined && typeof e?.threshold !== 'number') fail('expect: give a numeric threshold, or "than": another value of the variable to compare with');
+        return { ...(e.value !== undefined ? { value: e.value } : {}), metric: e.metric, op: e.op, ...(e.than !== undefined ? { than: e.than } : { threshold: e.threshold }) };
       });
     }
     const variable = op.variable;
@@ -798,10 +856,16 @@ const HANDLERS: Record<string, Handler> = {
     if (values.length > 6) fail('variable.values: at most 6 values');
     const seeds = op.seeds === undefined ? [1, 2, 3, 4, 5, 6] : nonEmptyArray(op.seeds, 'seeds').map((s) => (Number.isInteger(s) ? (s as number) : fail('seeds: integers')));
     if (seeds.length > 12) fail('seeds: at most 12');
-    for (const e of hypothesis.expect)
-      if (e.value !== undefined && !values.some((v) => JSON.stringify(v) === JSON.stringify(coerceParam(spec, e.value).value)))
-        fail(`expect.value ${JSON.stringify(e.value)} is not one of the variable's values`);
-    hypothesis.expect = hypothesis.expect.map((e) => (e.value !== undefined ? { ...e, value: coerceParam(spec, e.value).value } : e));
+    const known = (v: unknown) => values.some((x) => JSON.stringify(x) === JSON.stringify(coerceParam(spec, v).value));
+    for (const e of hypothesis.expect) {
+      if (e.value !== undefined && !known(e.value)) fail(`expect.value ${JSON.stringify(e.value)} is not one of the variable's values`);
+      if (e.than !== undefined && !known(e.than)) fail(`expect.than ${JSON.stringify(e.than)} is not one of the variable's values`);
+    }
+    hypothesis.expect = hypothesis.expect.map((e) => ({
+      ...e,
+      ...(e.value !== undefined ? { value: coerceParam(spec, e.value).value } : {}),
+      ...(e.than !== undefined ? { than: coerceParam(spec, e.than).value } : {}),
+    }));
 
     const xspec: ExperimentSpec = {
       target: target.id,
@@ -968,8 +1032,10 @@ const HANDLERS: Record<string, Handler> = {
     const id = tx.id(op.claim, 'claim');
     const c = tx.get(id);
     if (c.kind !== 'claim') fail('verify_claim: not a claim');
-    const ev = tx.get(tx.id(op.evidence, 'evidence'));
+    const ev = tx.get(tx.id(Array.isArray(op.evidence) && op.evidence.length === 1 ? op.evidence[0] : op.evidence, 'evidence'));
     if (ev.kind !== 'experiment') fail('verify_claim: evidence must be an experiment (a deterministic, reproducible computation)');
+    if (ev.state.supported === null || ev.state.supported === undefined)
+      fail(`verify_claim: ${ev.id} is inconclusive — its hypothesis has no testable expectations. Run an experiment with hypothesis.expect (e.g. {"value": [2], "metric": "success_rate", "op": ">", "than": []})`);
     const status = ev.state.supported ? 'supported' : 'refuted';
     tx.modify(id, { state: { ...c.state, status, evidence: [...new Set([...(c.state.evidence as string[]), ev.id])] }, provenance: { ...c.provenance, verifiedBy: [...new Set([...c.provenance.verifiedBy, ev.id])] } }, 'verify_claim');
     tx.relate('verified_by', id, ev.id, 'verify_claim');
@@ -977,6 +1043,20 @@ const HANDLERS: Record<string, Handler> = {
     tx.notes.push(`Claim ${id} is now ${status} by ${ev.id} (hypothesis: "${ev.state.hypothesis.text}").`);
   },
 };
+
+/** take an object out of the plain group framing it (glyph membership is never undone implicitly) */
+function leaveGroup(tx: TxBuilder, id: ObjectId, op: string) {
+  const parent = tx.ws.objects[tx.get(id).parent ?? ''];
+  if (parent?.kind !== 'group') return;
+  tx.modify(parent.id, { state: { ...parent.state, members: (parent.state.members as ObjectId[]).filter((m) => m !== id) } }, op);
+  for (const r of relationsFrom(tx.ws, parent.id, 'composed_of')) if (r.to === id) tx.unrelate(r.id, op);
+  tx.modify(id, { parent: undefined }, op);
+}
+
+function glyphSize(exposed: number) {
+  const base = sizeFor('glyph');
+  return { w: base.w, h: Math.max(base.h, 196 + 25 * exposed) };
+}
 
 function omit<T>(r: Record<string, T>, k: string): Record<string, T> {
   const c = { ...r };

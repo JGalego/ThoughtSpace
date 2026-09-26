@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Kernel, type BranchDiff, type ObjectId, type Operation } from '../kernel';
 import { localAgent } from '../agent/local';
-import { claudeAgent, DEFAULT_MODEL } from '../agent/claude';
+import { claudeAgent } from '../agent/claude';
+import { openaiAgent } from '../agent/openai';
 import type { AgentHost } from '../agent/host';
 import { UICtx, useKernelVersion, type Detail, type UI } from './context';
 import { Canvas, type View } from './Canvas';
 import { Inspector, BranchDiffPanel } from './Inspector';
-import { TopBar, PROXY_AVAILABLE, type AgentSettings } from './TopBar';
+import { TopBar, PROXIES, defaultSettings, type AgentSettings } from './TopBar';
 import { CommandBar, type Msg } from './CommandBar';
 
 const STORE = 'thoughtspace.workspace.v1';
 const LOG = 'thoughtspace.log.v1';
-const SETTINGS = 'thoughtspace.settings.v1';
+const SETTINGS = 'thoughtspace.settings.v2';
 const DISMISSED = 'thoughtspace.dismissed.v1';
 
 const kernel = new Kernel();
@@ -37,7 +38,11 @@ export function App() {
   const [probe, setProbe] = useState<[number, number] | null>(null);
   const [log, setLog] = useState<Msg[]>(() => readJSON(LOG, []));
   const [busy, setBusy] = useState<string | null>(null);
-  const [settings, setSettingsState] = useState<AgentSettings>(() => ({ mode: PROXY_AVAILABLE ? 'proxy' : 'offline', apiKey: '', model: DEFAULT_MODEL, ...readJSON<Partial<AgentSettings>>(SETTINGS, {}) }));
+  const [settings, setSettingsState] = useState<AgentSettings>(() => {
+    const d = defaultSettings();
+    const s = readJSON<Partial<AgentSettings>>(SETTINGS, {});
+    return { ...d, ...s, access: { ...d.access, ...s.access }, keys: { ...d.keys, ...s.keys }, models: { ...d.models, ...s.models } };
+  });
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(readJSON<string[]>(DISMISSED, [])));
   const [diff, setDiff] = useState<BranchDiff | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
@@ -93,8 +98,12 @@ export function App() {
   };
 
   const agent = useMemo(() => {
-    if (settings.mode === 'proxy' && PROXY_AVAILABLE) return claudeAgent({ mode: 'proxy', model: settings.model });
-    if (settings.mode === 'key' && settings.apiKey) return claudeAgent({ mode: 'key', apiKey: settings.apiKey, model: settings.model });
+    const p = settings.provider;
+    if (p === 'offline') return localAgent;
+    const make = p === 'anthropic' ? claudeAgent : openaiAgent;
+    const model = settings.models[p];
+    if (settings.access[p] === 'proxy' && PROXIES[p]) return make({ mode: 'proxy', model });
+    if (settings.access[p] === 'key' && settings.keys[p]) return make({ mode: 'key', apiKey: settings.keys[p], model });
     return localAgent;
   }, [settings]);
 
@@ -139,9 +148,14 @@ export function App() {
       const host: AgentHost = {
         kernel,
         selection: () => selNow,
-        apply: (ops: Operation[], summary?: string) => {
-          const r = kernel.dispatch(ops, 'ai', { summary });
-          if (r.ok) applied.push(summary ?? ops.map((o) => o.op).join(', '));
+        apply: (ops: Operation[], summary?: string, refs?: Record<string, ObjectId>) => {
+          const r = kernel.dispatch(ops, 'ai', { summary, refs });
+          if (r.ok) {
+            applied.push(summary ?? ops.map((o) => o.op).join(', '));
+            // follow the AI's hands: whatever it just made comes into view
+            const made = r.created.filter((id) => !kernel.state().objects[id]?.visual.hidden);
+            if (made.length) focus(made);
+          }
           return r;
         },
         highlight,

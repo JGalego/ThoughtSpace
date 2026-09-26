@@ -1,15 +1,34 @@
 import { useState } from 'react';
 import { useUI } from './context';
 import { DEFAULT_MODEL } from '../agent/claude';
+import { DEFAULT_OPENAI_MODEL } from '../agent/openai';
+
+export type Provider = 'anthropic' | 'openai';
 
 export interface AgentSettings {
-  mode: 'offline' | 'proxy' | 'key';
-  apiKey: string;
-  model: string;
+  provider: 'offline' | Provider;
+  /** per provider: use the dev server's key (proxy) or one pasted here */
+  access: Record<Provider, 'proxy' | 'key'>;
+  keys: Record<Provider, string>;
+  models: Record<Provider, string>;
 }
 
-declare const __PROXY_HAS_KEY__: boolean;
-export const PROXY_AVAILABLE = typeof __PROXY_HAS_KEY__ !== 'undefined' && __PROXY_HAS_KEY__;
+declare const __PROXIES__: Record<Provider, boolean>;
+export const PROXIES: Record<Provider, boolean> = typeof __PROXIES__ !== 'undefined' ? __PROXIES__ : { anthropic: false, openai: false };
+
+export function defaultSettings(): AgentSettings {
+  return {
+    provider: PROXIES.anthropic ? 'anthropic' : PROXIES.openai ? 'openai' : 'offline',
+    access: { anthropic: PROXIES.anthropic ? 'proxy' : 'key', openai: PROXIES.openai ? 'proxy' : 'key' },
+    keys: { anthropic: '', openai: '' },
+    models: { anthropic: DEFAULT_MODEL, openai: DEFAULT_OPENAI_MODEL },
+  };
+}
+
+const PROVIDERS: { id: Provider; name: string; env: string; host: string; placeholder: string; fallback: string }[] = [
+  { id: 'anthropic', name: 'Claude', env: 'ANTHROPIC_API_KEY', host: 'api.anthropic.com', placeholder: 'sk-ant-…', fallback: DEFAULT_MODEL },
+  { id: 'openai', name: 'OpenAI', env: 'OPENAI_API_KEY', host: 'api.openai.com', placeholder: 'sk-…', fallback: DEFAULT_OPENAI_MODEL },
+];
 
 type Pop = null | 'branches' | 'glyphs' | 'add' | 'settings';
 
@@ -133,29 +152,34 @@ export function TopBar({
       <span className="spacer" />
 
       <div className="tb-group anchor">
-        <button className={`tb-btn ${settings.mode !== 'offline' ? 'on' : ''}`} onClick={() => toggle('settings')} title="agent settings">
-          {settings.mode === 'offline' ? '◇ offline planner' : `✦ ${settings.model}`} ⚙
+        <button className={`tb-btn ${settings.provider !== 'offline' ? 'on' : ''}`} onClick={() => toggle('settings')} title="agent settings">
+          {settings.provider === 'offline' ? '◇ offline planner' : `✦ ${settings.models[settings.provider]}`} ⚙
         </button>
         {pop === 'settings' && (
           <div className="pop" style={{ right: 0, width: 320 }}>
             <h4>AI participant</h4>
-            <label className="item"><input type="radio" checked={settings.mode === 'offline'} onChange={() => setSettings({ ...settings, mode: 'offline' })} /> Offline planner (deterministic, no network)</label>
-            <label className="item" style={{ opacity: PROXY_AVAILABLE ? 1 : 0.5 }}>
-              <input type="radio" disabled={!PROXY_AVAILABLE} checked={settings.mode === 'proxy'} onChange={() => setSettings({ ...settings, mode: 'proxy' })} /> Claude via dev server {PROXY_AVAILABLE ? '' : '(start with ANTHROPIC_API_KEY set)'}
-            </label>
-            <label className="item"><input type="radio" checked={settings.mode === 'key'} onChange={() => setSettings({ ...settings, mode: 'key' })} /> Claude with my API key</label>
-            {settings.mode === 'key' && (
-              <>
-                <input type="password" placeholder="sk-ant-…" value={settings.apiKey} onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })} onKeyDown={(e) => e.stopPropagation()} />
-                <div className="small muted">Stored in this browser only and sent directly to api.anthropic.com.</div>
-              </>
-            )}
-            {settings.mode !== 'offline' && (
-              <>
+            <label className="item"><input type="radio" checked={settings.provider === 'offline'} onChange={() => setSettings({ ...settings, provider: 'offline' })} /> Offline planner (deterministic, no network)</label>
+            {PROVIDERS.map((pv) => (
+              <label key={pv.id} className="item"><input type="radio" checked={settings.provider === pv.id} onChange={() => setSettings({ ...settings, provider: pv.id })} /> {pv.name}</label>
+            ))}
+            {PROVIDERS.filter((pv) => pv.id === settings.provider).map((pv) => (
+              <div key={pv.id} style={{ padding: '2px 6px' }}>
+                <label className="item" style={{ opacity: PROXIES[pv.id] ? 1 : 0.5 }}>
+                  <input type="radio" disabled={!PROXIES[pv.id]} checked={settings.access[pv.id] === 'proxy'} onChange={() => setSettings({ ...settings, access: { ...settings.access, [pv.id]: 'proxy' } })} /> key from the dev server {PROXIES[pv.id] ? '' : `(set ${pv.env})`}
+                </label>
+                <label className="item">
+                  <input type="radio" checked={settings.access[pv.id] === 'key'} onChange={() => setSettings({ ...settings, access: { ...settings.access, [pv.id]: 'key' } })} /> my own key
+                </label>
+                {settings.access[pv.id] === 'key' && (
+                  <>
+                    <input type="password" placeholder={pv.placeholder} value={settings.keys[pv.id]} onChange={(e) => setSettings({ ...settings, keys: { ...settings.keys, [pv.id]: e.target.value } })} onKeyDown={(e) => e.stopPropagation()} />
+                    <div className="small muted">Stored in this browser only and sent directly to {pv.host}.</div>
+                  </>
+                )}
                 <h4 style={{ marginTop: 8 }}>Model</h4>
-                <input type="text" value={settings.model} onChange={(e) => setSettings({ ...settings, model: e.target.value || DEFAULT_MODEL })} onKeyDown={(e) => e.stopPropagation()} />
-              </>
-            )}
+                <input type="text" value={settings.models[pv.id]} onChange={(e) => setSettings({ ...settings, models: { ...settings.models, [pv.id]: e.target.value || pv.fallback } })} onKeyDown={(e) => e.stopPropagation()} />
+              </div>
+            ))}
             <h4 style={{ marginTop: 8 }}>Workspace</h4>
             <div className="actions">
               <button

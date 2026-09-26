@@ -39,7 +39,7 @@ export function CommandBar({ log, busy, agentName, onSubmit }: { log: Msg[]; bus
         <div ref={logRef} className={`log ${open ? '' : 'collapsed'}`} onClick={() => setOpen(!open)} title={open ? 'collapse' : 'show full history'}>
           {recent.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
-              {m.text}
+              <Inline text={m.text} />
               {m.ops && <span className="ops">{m.ops}</span>}
             </div>
           ))}
@@ -70,5 +70,25 @@ export function CommandBar({ log, busy, agentName, onSubmit }: { log: Msg[]; bus
         <button className="btn ai" disabled={!text.trim() || !!busy} type="submit">↵</button>
       </form>
     </div>
+  );
+}
+
+/** The small subset of markdown models use in short replies: **bold**, *italic*, `code`. */
+function Inline({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith('**') && p.endsWith('**') && p.length > 4 ? (
+          <b key={i}>{p.slice(2, -2)}</b>
+        ) : p.startsWith('`') && p.endsWith('`') && p.length > 2 ? (
+          <code key={i} className="mono">{p.slice(1, -1)}</code>
+        ) : p.startsWith('*') && p.endsWith('*') && p.length > 2 ? (
+          <i key={i}>{p.slice(1, -1)}</i>
+        ) : (
+          p
+        ),
+      )}
+    </>
   );
 }

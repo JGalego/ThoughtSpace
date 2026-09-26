@@ -61,7 +61,7 @@ describe('Claude agent loop', () => {
     const host: AgentHost = {
       kernel,
       selection: () => [],
-      apply: (ops) => kernel.dispatch(ops, 'ai'),
+      apply: (ops, _s, refs) => kernel.dispatch(ops, 'ai', { refs }),
       highlight: (t) => highlights.push(t),
       focus: () => {},
       say: (t) => said.push(t),
