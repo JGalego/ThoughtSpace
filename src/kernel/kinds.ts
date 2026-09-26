@@ -3,6 +3,7 @@
 
 import type { ObjectKind, ParamSpec, ParamValue, Port, TSObject, Workspace } from './types';
 import { ACTIVATIONS, initWeights, round4, type Activation, type Point } from './nn';
+import { providers, scalarOf, systemOf, trialsOf } from './calc';
 import {
   datasetFor,
   describeArchitecture,
@@ -308,9 +309,13 @@ const graph: KindSpec = {
   kind: 'graph',
   title: 'Graph',
   description:
-    'A plot that visualizes another object (graph --visualizes--> source). Modes: decision_boundary (network output over input space with the data points), loss_curve (simulation or network training history), weight_sweep (loss as one weight varies; set param weight="L:J:I"), activation (a function).',
+    'A plot that visualizes other objects (graph --visualizes--> source). Modes: curve (one or more formulas against a variable x over [from, to], with a marker at the current value), series (a system: y names against x, e.g. x="t", y="S,I,R", or a trajectory x="x", y="y"), histogram (random trials), decision_boundary (network output over input space with the data points), loss_curve (training history), weight_sweep (loss as one weight varies; weight="L:J:I"), activation (a function).',
   params: [
-    { name: 'mode', type: 'enum', default: 'decision_boundary', options: ['decision_boundary', 'loss_curve', 'weight_sweep', 'activation'], description: 'what to plot' },
+    { name: 'mode', type: 'enum', default: 'decision_boundary', options: ['curve', 'series', 'histogram', 'decision_boundary', 'loss_curve', 'weight_sweep', 'activation'], description: 'what to plot' },
+    { name: 'x', type: 'string', default: '', description: 'curve: the variable on the x-axis; series: the series on the x-axis (default t)' },
+    { name: 'y', type: 'string', default: '', description: 'series: comma-separated names to plot (default: all state variables)' },
+    { name: 'from', type: 'number', default: 0, min: -1e9, max: 1e9, description: 'curve: start of the x range (default: the variable\'s slider range)' },
+    { name: 'to', type: 'number', default: 0, min: -1e9, max: 1e9, description: 'curve: end of the x range (from = to means: the slider range)' },
     { name: 'weight', type: 'string', default: '0:0:0', description: 'for weight_sweep: weight path L:J:I' },
     { name: 'span', type: 'number', default: 4, min: 0.5, max: 20, description: 'for weight_sweep: ± range around the current value' },
   ],
@@ -320,7 +325,14 @@ const graph: KindSpec = {
   defaultState: (_p, init) => ({ ...(init ?? {}) }),
   summarize(o, ws) {
     const src = sourceOf(ws, o.id);
-    return { mode: o.params.mode, source: src?.id ?? null, ...(o.params.mode === 'weight_sweep' ? { weight: o.params.weight } : {}) };
+    const sources = relationsFrom(ws, o.id, 'visualizes').map((r) => r.to);
+    return {
+      mode: o.params.mode,
+      source: src?.id ?? null,
+      ...(sources.length > 1 ? { sources } : {}),
+      ...(o.params.mode === 'weight_sweep' ? { weight: o.params.weight } : {}),
+      ...(['curve', 'series'].includes(o.params.mode as string) ? { x: o.params.x, y: o.params.y || undefined } : {}),
+    };
   },
 };
 
@@ -488,6 +500,109 @@ const sketch: KindSpec = {
   },
 };
 
+// ------------------------------------------------------------------ open-lesson building blocks
+
+const IDENT = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+export const isIdentifier = (s: unknown): s is string => typeof s === 'string' && IDENT.test(s);
+
+const r3 = (x: number | undefined) => (x === undefined || !Number.isFinite(x) ? x : +x.toPrecision(4));
+
+const variable: KindSpec = {
+  kind: 'variable',
+  title: 'Variable',
+  description:
+    'A named quantity with a slider (the thing the class manipulates): state {name, unit?, description?}, params {value, min, max, step}. It feeds formulas, systems and trials that use its name.',
+  params: [
+    { name: 'value', type: 'number', default: 1, min: -1e9, max: 1e9, description: 'current value' },
+    { name: 'min', type: 'number', default: 0, min: -1e9, max: 1e9, description: 'slider minimum' },
+    { name: 'max', type: 'number', default: 10, min: -1e9, max: 1e9, description: 'slider maximum' },
+    { name: 'step', type: 'number', default: 0, min: 0, max: 1e9, description: 'slider step (0 = smooth)' },
+  ],
+  size: { w: 260, h: 104 },
+  creatable: true,
+  ports: () => ({ inputs: [], outputs: [{ name: 'value', type: 'any' }] }),
+  defaultState: (_p, init) => ({ name: 'x', unit: '', description: '', ...(init ?? {}) }),
+  summarize: (o) => ({ name: o.state.name, value: o.params.value, range: [o.params.min, o.params.max], ...(o.state.unit ? { unit: o.state.unit } : {}), ...(o.state.description ? { description: o.state.description } : {}) }),
+};
+
+const formula: KindSpec = {
+  kind: 'formula',
+  title: 'Formula',
+  description:
+    'A live, typeset formula name = expr (state {name, expr, unit?, description?}). Its value updates as the variables and formulas it uses change. Names it uses are linked automatically to the visible variables/formulas/systems/trials providing them.',
+  params: [],
+  size: { w: 330, h: 118 },
+  creatable: true,
+  ports: () => ({ inputs: [{ name: 'inputs', type: 'any' }], outputs: [{ name: 'value', type: 'any' }] }),
+  defaultState: (_p, init) => ({ name: 'y', expr: '0', unit: '', description: '', ...(init ?? {}) }),
+  summarize(o, ws) {
+    const v = scalarOf(ws, o);
+    return {
+      name: o.state.name,
+      expr: o.state.expr,
+      value: v.ok ? r3(v.value) : `error: ${v.error}`,
+      inputs: providers(ws, o.id).map((p) => p.id),
+      ...(o.state.unit ? { unit: o.state.unit } : {}),
+      ...(o.state.description ? { description: o.state.description } : {}),
+    };
+  },
+};
+
+const system: KindSpec = {
+  kind: 'system',
+  title: 'System',
+  description:
+    'Differential equations integrated numerically (RK4): state {name, vars: [{name, init, rate}] (d name/dt = rate), helpers?: [{name, expr}], stop?: expr (stop when true, e.g. "y < 0")}, params {t_max, dt}. Outputs for other objects and experiments: t_end and, per variable/helper v, v_end, v_max, v_min, t_v_max.',
+  params: [
+    { name: 't_max', type: 'number', default: 10, min: 0.001, max: 1e7, description: 'simulate until this time' },
+    { name: 'dt', type: 'number', default: 0.01, min: 1e-6, max: 1e5, description: 'integration step' },
+  ],
+  size: { w: 360, h: 210 },
+  creatable: true,
+  ports: () => ({ inputs: [{ name: 'inputs', type: 'any' }], outputs: [{ name: 'series', type: 'series' }] }),
+  defaultState: (_p, init) => ({ name: 'system', vars: [], helpers: [], stop: '', description: '', ...(init ?? {}) }),
+  summarize(o, ws) {
+    const run = systemOf(ws, o);
+    return {
+      name: o.state.name,
+      vars: o.state.vars,
+      helpers: o.state.helpers,
+      stop: o.state.stop || undefined,
+      t_max: o.params.t_max,
+      dt: o.params.dt,
+      inputs: providers(ws, o.id).map((p) => p.id),
+      outputs: run.ok ? Object.fromEntries(Object.entries(run.value.outputs).filter(([k]) => !k.startsWith('t_') || k === 't_end' || /^t_\w+_max$/.test(k)).map(([k, v]) => [k, r3(v)])) : `error: ${run.error}`,
+    };
+  },
+};
+
+const trials: KindSpec = {
+  kind: 'trials',
+  title: 'Random trials',
+  description:
+    'Repeat a random expression many times (seeded, reproducible) and show the histogram: state {name, expr, description?}, params {trials, seed, bins}. Random functions: rand() randn() randint(a,b) coin(p) randexp(rate); meanof(n, expr)/sumof(n, expr) repeat inside one trial. Outputs: name_mean, name_sd, name_skew, name_kurtosis, name_median, name_min, name_max.',
+  params: [
+    { name: 'trials', type: 'int', default: 2000, min: 1, max: 50000, description: 'number of repetitions' },
+    { name: 'seed', type: 'int', default: 1, min: 0, max: 1e9, description: 'random seed (same seed, same results)' },
+    { name: 'bins', type: 'int', default: 30, min: 3, max: 120, description: 'histogram bins' },
+  ],
+  size: { w: 340, h: 250 },
+  creatable: true,
+  ports: () => ({ inputs: [{ name: 'inputs', type: 'any' }], outputs: [{ name: 'stats', type: 'any' }] }),
+  defaultState: (_p, init) => ({ name: 'X', expr: 'rand()', description: '', ...(init ?? {}) }),
+  summarize(o, ws) {
+    const run = trialsOf(ws, o);
+    return {
+      name: o.state.name,
+      expr: o.state.expr,
+      trials: o.params.trials,
+      seed: o.params.seed,
+      inputs: providers(ws, o.id).map((p) => p.id),
+      stats: run.ok ? Object.fromEntries(Object.entries(run.value.stats).map(([k, v]) => [k, r3(v)])) : `error: ${run.error}`,
+    };
+  },
+};
+
 export const KINDS: Record<ObjectKind, KindSpec> = {
   neural_network: nn,
   dataset,
@@ -502,6 +617,10 @@ export const KINDS: Record<ObjectKind, KindSpec> = {
   group,
   glyph,
   sketch,
+  variable,
+  formula,
+  system,
+  trials,
 };
 
 export function kindSpec(kind: string): KindSpec | undefined {

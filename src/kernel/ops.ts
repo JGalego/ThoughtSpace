@@ -24,6 +24,9 @@ import { bbox, findFree, pack, place, placeBlock } from './layout';
 import { datasetFor, labelOf, layersOf, netParams, points, relationsFrom, relationsOf, relationsTo, resolve, sourceOf } from './semantics';
 import { describeArchitecture } from './semantics';
 import { train } from './nn';
+import { CALC_EDITABLE, calcCreateArgs, calcExperimentSpec, calcPlotParams, checkCalcState, describeValue, linkNames, runCalcExperiment } from './ops-calc';
+import { isCalc } from './calc';
+import { ExprError } from './expr';
 import { AI_SHAPES, boundaryWeights, classify, INK_COLORS, shapeStrokes, strokeBBox, type AIShape, type InkColor, type Stroke, type XY } from './ink';
 import { formatValue, METRICS, runExperiment, type Expectation, type ExperimentSpec } from './experiment';
 
@@ -64,7 +67,7 @@ export interface OpDoc {
 }
 
 export const OPS: OpDoc[] = [
-  { op: 'create_object', summary: 'create an object of a kind', args: '{kind, label?, params?, state?, placement?, ref?, source?, dataset?}' },
+  { op: 'create_object', summary: 'create an object of a kind (variable/formula/system/trials also take flat fields: name, expr, value, min, max, unit, vars, stop, …)', args: '{kind, label?, params?, state?, placement?, ref?, source?, dataset?, inputs?}' },
   { op: 'delete_object', summary: 'delete an object (and its relations; a glyph deletes its construction)', args: '{id}' },
   { op: 'modify_object', summary: 'change label and/or editable semantic state', args: '{id, label?, state?}' },
   { op: 'set_parameter', summary: 'set one parameter (on a glyph: an exposed parameter)', args: '{id, param, value}' },
@@ -80,7 +83,7 @@ export const OPS: OpDoc[] = [
   { op: 'expand', summary: 'expand/collapse a glyph to show its construction', args: '{id, expanded?}' },
   { op: 'instantiate_glyph', summary: 'create a new instance of a glyph from the library', args: '{definition, placement?, ref?}' },
   { op: 'execute', summary: 'train a network deterministically (creates/updates a training-run object)', args: '{id, ref?} (ref names the training run)' },
-  { op: 'plot', summary: 'create a graph visualizing an object', args: '{source, mode?, weight?, placement?, ref?}' },
+  { op: 'plot', summary: 'create a graph visualizing an object', args: '{source (id or list of formula ids), mode?, x?, y?, from?, to?, weight?, placement?, ref?}' },
   { op: 'zoom_into', summary: 'semantic zoom: a linked equation one level down', args: '{id, form: "neuron"|"boundary"|"network"|"arithmetic", focus?: "L:J", input?: "x1,x2", ref?}' },
   { op: 'experiment', summary: 'run a controlled, reproducible experiment on a network', args: '{target, hypothesis: {text, expect?: [{value?, metric, op, threshold}]}, variable: {param: hidden|activation|learningRate|epochs, values}, seeds?, ref?} — each expectation compares the metric of one value with a threshold or with another value (than); metric: success_rate|mean_final_loss|best_accuracy|mean_accuracy|mean_converged_at|mean_grad_norm; op: < <= > >= ==. Without expectations an experiment is inconclusive and cannot verify claims' },
   { op: 'reproduce', summary: 're-run an experiment and check its results hash', args: '{id}' },
@@ -107,6 +110,10 @@ const PREFIX: Record<string, string> = {
   group: 'group',
   glyph: 'glyph',
   sketch: 'ink',
+  variable: 'var',
+  formula: 'f',
+  system: 'sys',
+  trials: 'trials',
 };
 
 /** state keys a client may write through modify_object */
@@ -117,6 +124,7 @@ const EDITABLE: Record<string, string[]> = {
   neural_network: ['weights', 'biases'],
   dataset: ['points'],
   glyph: ['name'],
+  ...CALC_EDITABLE,
 };
 
 // -------------------------------------------------------------- transaction builder
@@ -309,6 +317,7 @@ function checkEditableState(o: { kind: string; params: Record<string, ParamValue
     if (k === 'weights' || k === 'biases') checkShape(o, k, v);
     if (k === 'points') checkPoints(v);
   }
+  if (CALC_EDITABLE[o.kind]) checkCalcState(o.kind, patch as Record<string, unknown>);
   return patch as Record<string, unknown>;
 }
 
@@ -343,6 +352,13 @@ function applyParam(tx: TxBuilder, id: ObjectId, name: string, value: unknown, o
   const c = coerceParam(ps!, value);
   if (c.error) fail(c.error);
   const params = { ...o.params, [name]: c.value! };
+  if (o.kind === 'variable') {
+    // the slider range always contains the value
+    const v = Number(params.value);
+    if (name === 'value') (params.min = Math.min(Number(params.min), v)), (params.max = Math.max(Number(params.max), v));
+    if (Number(params.min) >= Number(params.max)) fail('variable: min must be below max');
+    if (name !== 'value') params.value = Math.min(Number(params.max), Math.max(Number(params.min), v));
+  }
   const state = spec.onParamChange?.({ ...o, params }, name, c.value!);
   tx.modify(id, { params, ...(state ? { state } : {}) }, op);
 }
@@ -469,11 +485,12 @@ const HANDLERS: Record<string, Handler> = {
     if (!spec) fail(`unknown kind "${op.kind}". Kinds: ${Object.keys(KINDS).join(', ')}`);
     if (!spec!.creatable)
       fail(`${op.kind} objects are produced by operations (execute, experiment, compare, claim, group, abstract), not create_object`);
-    const params = coerceParams(op.kind, op.params);
-    const init = checkEditableState({ kind: op.kind, params }, op.state);
+    const calc = CALC_EDITABLE[op.kind] ? calcCreateArgs(op) : undefined;
+    const params = coerceParams(op.kind, calc ? calc.params : op.params);
+    const init = checkEditableState({ kind: op.kind, params }, calc ? calc.state : op.state);
     const id = tx.newId(PREFIX[op.kind]);
     const state = spec!.defaultState(params, init);
-    const label = op.label !== undefined ? str(op.label, 'label', 80) : defaultLabel(tx.ws, op.kind, params);
+    const label = op.label !== undefined ? str(op.label, 'label', 80) : calc ? String(state.name) : defaultLabel(tx.ws, op.kind, params);
     const size = op.kind === 'text' && state.text ? { w: spec!.size.w, h: Math.min(280, 60 + textLines(state.text, 40) * 19) } : spec!.size;
     tx.createObject({ id, kind: op.kind, label, params, state, visual: tx.allocate(size, tx.placement(op.placement)) }, 'create_object');
     tx.setRef(op.ref, id);
@@ -486,6 +503,10 @@ const HANDLERS: Record<string, Handler> = {
     if (op.dataset !== undefined) {
       if (op.kind !== 'neural_network') fail('dataset: only networks take a dataset');
       HANDLERS.connect(tx, { op: 'connect', from: op.dataset, to: id, relation: 'feeds_into' });
+    }
+    if (calc) {
+      linkNames(tx, id, op.inputs, 'create_object');
+      tx.notes.push(`${id}: ${describeValue(tx, tx.get(id))}`);
     }
   },
 
@@ -524,6 +545,13 @@ const HANDLERS: Record<string, Handler> = {
     }
     if (!Object.keys(set).length) fail('modify_object: nothing to change (give label and/or state)');
     tx.modify(id, set, 'modify_object');
+    if (CALC_EDITABLE[o.kind] && set.state) {
+      linkNames(tx, id, op.inputs, 'modify_object');
+      // objects that used the old name must still resolve
+      if (o.state.name !== set.state.name)
+        for (const r of Object.values(tx.ws.relations)) if (r.type === 'feeds_into' && r.from === id) linkNames(tx, r.to, undefined, 'modify_object');
+      tx.notes.push(`${id}: ${describeValue(tx, tx.get(id))}`);
+    }
   },
 
   set_parameter(tx, op) {
@@ -580,7 +608,8 @@ const HANDLERS: Record<string, Handler> = {
     }
     if (type === 'visualizes') {
       if (!['graph', 'equation'].includes(a.kind)) fail('visualizes: the "from" object must be a graph or equation');
-      for (const r of relationsFrom(tx.ws, from, 'visualizes')) tx.unrelate(r.id, 'connect');
+      const adding = a.params.mode === 'curve' && tx.get(to).kind === 'formula';
+      if (!adding) for (const r of relationsFrom(tx.ws, from, 'visualizes')) tx.unrelate(r.id, 'connect');
     }
     tx.relate(type, from, to, 'connect', op.meta && typeof op.meta === 'object' ? op.meta : undefined);
   },
@@ -648,7 +677,10 @@ const HANDLERS: Record<string, Handler> = {
       if (m.parent) fail(`${m.label} already belongs to ${labelOf(tx.ws, m.parent)}`);
       if (m.kind === 'glyph' || m.kind === 'group') fail('abstract: nesting glyphs/groups is not supported in this prototype');
     }
-    const outputId: ObjectId | undefined = op.output !== undefined ? tx.id(op.output, 'output') : members.find((m) => m.kind === 'neural_network')?.id;
+    const outputId: ObjectId | undefined =
+      op.output !== undefined
+        ? tx.id(op.output, 'output')
+        : (members.find((m) => m.kind === 'neural_network') ?? members.find((m) => m.kind === 'formula' || m.kind === 'system' || m.kind === 'trials'))?.id;
     if (outputId && !ids.includes(outputId)) fail('output must be one of the abstracted objects');
     let exposed: ExposedParam[];
     if (op.expose !== undefined) {
@@ -665,7 +697,7 @@ const HANDLERS: Record<string, Handler> = {
     } else {
       exposed = outputId && tx.get(outputId).kind === 'neural_network'
         ? ['hidden', 'activation', 'seed'].map((p) => ({ name: p, id: outputId, param: p }))
-        : [];
+        : members.filter((m) => m.kind === 'variable').map((m) => ({ name: m.state.name as string, id: m.id, param: 'value' }));
     }
     const bb = bbox(members);
     const glyphId = tx.newId('glyph');
@@ -698,7 +730,7 @@ const HANDLERS: Record<string, Handler> = {
         kind: 'glyph',
         label: name,
         params: {},
-        state: { name, definition: defId, members: ids, exposed, output: outputId, dataInput: inputs.some((i) => i.member === outputId) || (!!outputId && !datasetFor(tx.ws, outputId)) },
+        state: { name, definition: defId, members: ids, exposed, output: outputId, dataInput: !!outputId && tx.get(outputId).kind === 'neural_network' && (inputs.some((i) => i.member === outputId) || !datasetFor(tx.ws, outputId)) },
         // the card takes the construction's place, or the nearest free spot to it
         visual: { ...findFree(tx.ws, { x: bb.x, y: bb.y, w: size.w, h: size.h }, new Set(ids)), w: size.w, h: size.h, expanded: false },
         provenance: { derivedFrom: ids, note: 'abstraction; the construction is preserved inside' },
@@ -770,7 +802,7 @@ const HANDLERS: Record<string, Handler> = {
           members,
           exposed: def!.exposed.map((e) => ({ ...e, id: map[e.id] })),
           output: def!.output ? map[def!.output] : undefined,
-          dataInput: (def!.inputs ?? []).some((i) => i.member === def!.output) || (!!def!.output && !def!.objects.some((o) => o.kind === 'dataset')),
+          dataInput: def!.objects.find((o) => o.id === def!.output)?.kind === 'neural_network' && ((def!.inputs ?? []).some((i) => i.member === def!.output) || !def!.objects.some((o) => o.kind === 'dataset')),
         },
         visual: { ...v, expanded: false },
         provenance: { derivedFrom: [def!.sourceGlyph].filter((x) => tx.ws.objects[x]), note: `instance of ${def!.name}` },
@@ -793,7 +825,31 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   plot(tx, op) {
-    const src = tx.id(op.source, 'source');
+    // formulas (several at once), systems and trials: the open-lesson plots
+    const srcIds = (Array.isArray(op.source) ? op.source : [op.source]).map((v: unknown) => tx.id(v, 'source'));
+    if (srcIds.some((i: string) => isCalc(tx.get(i)))) {
+      const sources = srcIds.map((i: string) => tx.get(i));
+      const { params: p, label } = calcPlotParams(tx, sources, op);
+      const params = coerceParams('graph', p);
+      const id = tx.newId('plot');
+      const big = params.mode === 'curve' || params.mode === 'series';
+      tx.createObject(
+        {
+          id,
+          kind: 'graph',
+          label: typeof op.label === 'string' ? op.label : label,
+          params,
+          state: {},
+          visual: tx.allocate(big ? { w: 340, h: 270 } : sizeFor('graph'), tx.placement(op.placement) ?? { beside: srcIds[0] }),
+          provenance: { derivedFrom: srcIds },
+        },
+        'plot',
+      );
+      for (const s of srcIds) tx.relate('visualizes', id, s, 'plot');
+      tx.setRef(op.ref, id);
+      return;
+    }
+    const src = srcIds[0];
     const s = resolve(tx.ws, src)!;
     const mode = op.mode ?? (s.kind === 'simulation' ? 'loss_curve' : s.kind === 'function' ? 'activation' : 'decision_boundary');
     const params = coerceParams('graph', { mode, ...(op.weight !== undefined ? { weight: op.weight } : {}), ...(op.span !== undefined ? { span: op.span } : {}) });
@@ -834,6 +890,7 @@ const HANDLERS: Record<string, Handler> = {
 
   experiment(tx, op) {
     const target = resolve(tx.ws, tx.id(op.target, 'target'))!;
+    if (isCalc(target)) return calcExperiment(tx, op, target);
     if (target.kind !== 'neural_network') fail('experiment: target must be a network (or a glyph wrapping one)');
     const ds = datasetFor(tx.ws, target.id);
     if (!ds) fail('experiment: target has no dataset');
@@ -916,6 +973,20 @@ const HANDLERS: Record<string, Handler> = {
     const e = tx.get(id);
     if (e.kind !== 'experiment') fail('reproduce: not an experiment');
     const s = e.state;
+    if (s.mode === 'calc') {
+      if (!tx.ws.objects[s.target]) fail('reproduce: the measured object was deleted');
+      let again;
+      try {
+        again = runCalcExperiment(tx.ws, { target: s.target, hypothesis: s.hypothesis, variable: s.variable, seeds: s.seeds, constants: s.constants });
+      } catch (err) {
+        return fail(`reproduce: ${(err as Error).message}`);
+      }
+      const match = again.hash === s.hash;
+      tx.modify(id, { state: { ...s, reproductions: [...(s.reproductions ?? []), { at: tx.at, hash: again.hash, match, by: tx.actor }] } }, 'reproduce');
+      tx.marker('ComputationExecuted', id, 'reproduce', { kind: 'reproduce', match, hash: again.hash });
+      tx.notes.push(match ? `Reproduced ${id}: identical results (hash ${again.hash}).` : `Reproduction of ${id} DIFFERED (${again.hash} vs ${s.hash}): the measured formulas changed since.`);
+      return;
+    }
     const again = runExperiment({ target: s.target, hypothesis: s.hypothesis, variable: s.variable, baseline: s.baseline, seeds: s.seeds, data: s.data, datasetId: s.datasetId });
     const match = again.hash === s.hash;
     tx.modify(id, { state: { ...s, reproductions: [...(s.reproductions ?? []), { at: tx.at, hash: again.hash, match, by: tx.actor }] } }, 'reproduce');
@@ -1132,6 +1203,36 @@ function leaveGroup(tx: TxBuilder, id: ObjectId, op: string) {
   tx.modify(parent.id, { state: { ...parent.state, members: (parent.state.members as ObjectId[]).filter((m) => m !== id) } }, op);
   for (const r of relationsFrom(tx.ws, parent.id, 'composed_of')) if (r.to === id) tx.unrelate(r.id, op);
   tx.modify(id, { parent: undefined }, op);
+}
+
+function calcExperiment(tx: TxBuilder, op: Operation, target: TSObject) {
+  const h = op.hypothesis;
+  const hyp = { text: str(typeof h === 'string' ? h : h?.text, 'hypothesis.text', 400), expect: h && typeof h === 'object' && h.expect !== undefined ? (nonEmptyArray(h.expect, 'hypothesis.expect') as any[]) : [] };
+  const spec = calcExperimentSpec(tx, target, op, hyp);
+  let outcome;
+  try {
+    outcome = runCalcExperiment(tx.ws, spec);
+  } catch (e) {
+    return fail(`experiment: ${e instanceof ExprError ? e.message : (e as Error).message}`);
+  }
+  const id = tx.newId('exp');
+  tx.marker('ExperimentStarted', target.id, 'experiment', { experiment: id, variable: spec.variable });
+  tx.createObject(
+    {
+      id,
+      kind: 'experiment',
+      label: typeof op.label === 'string' ? op.label : `Experiment: vary ${spec.variable.param}`,
+      params: {},
+      state: { mode: 'calc', ...spec, ...outcome, reproductions: [] },
+      visual: tx.allocate({ w: 440, h: 330 }, tx.placement(op.placement) ?? { beside: target.id }),
+      provenance: { derivedFrom: [target.id], experiment: id },
+    },
+    'experiment',
+  );
+  tx.relate('generated_from', id, target.id, 'experiment');
+  tx.marker('ExperimentCompleted', id, 'experiment', { supported: outcome.supported, hash: outcome.hash });
+  tx.setRef(op.ref, id);
+  tx.notes.push(`Experiment ${id}: ${outcome.conclusion} (results hash ${outcome.hash})`);
 }
 
 function glyphSize(exposed: number) {

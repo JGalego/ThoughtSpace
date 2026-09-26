@@ -18,7 +18,11 @@ export type ObjectKind =
   | 'claim'
   | 'group'
   | 'glyph'
-  | 'sketch';
+  | 'sketch'
+  | 'variable'
+  | 'formula'
+  | 'system'
+  | 'trials';
 
 export type ParamValue = number | string | boolean | number[] | null;
 

@@ -4,6 +4,7 @@
 import type { ObjectId, Workspace } from './types';
 import { kindSpec, KINDS } from './kinds';
 import { OPS } from './ops';
+import { CALC_DOC } from './ops-calc';
 
 export function semanticView(ws: Workspace, selection: ObjectId[] = []): Record<string, unknown> {
   const objects = Object.values(ws.objects).map((o) => ({
@@ -35,5 +36,5 @@ export function protocolDoc(): string {
     })
     .join('\n');
   const ops = OPS.map((o) => `- ${o.op} ${o.args}: ${o.summary}`).join('\n');
-  return `OBJECT KINDS\n${kinds}\n\nOPERATIONS\n${ops}`;
+  return `OBJECT KINDS\n${kinds}\n\nOPERATIONS\n${ops}\n\n${CALC_DOC}`;
 }

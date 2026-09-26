@@ -10,3 +10,5 @@ export * as nn from './nn';
 export { formatValue, smallestWorking, METRICS } from './experiment';
 export { ACTIVATIONS } from './nn';
 export * as ink from './ink';
+export * from './calc';
+export { LANGUAGE_DOC, toLatex, parse as parseExpr, check as checkExpr, nameTex } from './expr';
