@@ -4,7 +4,7 @@ export default async function (h) {
   const { p } = h;
   await h.caption('Glyphs: abstraction that keeps the construction');
   await h.wait(1000);
-  await h.click(p.locator('.chip'));
+  await h.click(p.locator('.chip:has-text("XOR")'));
   await h.wait(1000);
   await h.click(h.obj('neural_network').locator('.obj-head'));
   await h.say('Show me the smallest change that makes it work.');

@@ -208,7 +208,8 @@ function testPrediction(h: AgentHost, claim: TSObject | undefined, text: string,
     claimRef = '$c';
   }
   ops.push({ op: 'experiment', target: o.id, ref: 'e', variable: { param: plan.variable.state.name, values: plan.values }, hypothesis: { text, expect: plan.expect } });
-  if (!claim || claim.state.status === 'unverified') ops.push({ op: 'verify_claim', claim: claimRef, evidence: '$e' });
+  // a re-test under new conditions (another slider moved) updates the verdict; the claim keeps all its evidence
+  ops.push({ op: 'verify_claim', claim: claimRef, evidence: '$e' });
   const r = apply(h, ops, 'test a prediction');
   if (!r.ok) return true;
   const e = ws(h).objects[r.refs.e];
@@ -359,8 +360,10 @@ const test: Handler = (raw, t, h) => {
   // "test: R is largest when theta = 45" — the prediction is in the request itself
   const inline = raw.replace(/^.*?\b(test|check|verify|predict(ion)?|i (think|bet|guess))\b(\s+(that|whether|if))?\s*:?\s*/i, '').trim();
   if (inline.length > 6 && /\b(when|as|at|below|above|under|over|than|increase|decrease|largest|smallest|grow|shrink|more|less)\b/i.test(inline)) return testPrediction(h, undefined, inline.charAt(0).toUpperCase() + inline.slice(1));
-  const open = visible(w).find((o) => o.kind === 'claim' && o.state.status === 'unverified' && (o.state.about as string[]).some((a) => isCalc(w.objects[a])));
-  if (open) return testPrediction(h, open, open.state.text);
+  const predictions = visible(w)
+    .filter((o) => o.kind === 'claim' && (o.state.about as string[]).some((a) => isCalc(w.objects[a])))
+    .sort((a, b) => Number(b.state.status === 'unverified') - Number(a.state.status === 'unverified') || idNum(b.id) - idNum(a.id));
+  if (predictions[0]) return testPrediction(h, predictions[0], predictions[0].state.text);
   h.say('Write the prediction and I will turn it into an experiment, e.g. “test: R is largest when theta = 45” or “test: I_max decreases as vacc increases”.');
   return true;
 };

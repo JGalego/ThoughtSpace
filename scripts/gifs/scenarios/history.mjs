@@ -4,7 +4,7 @@ export default async function (h) {
   const { p } = h;
   await h.caption('History: every change is an event, and nothing is lost');
   await h.wait(1000);
-  await h.click(p.locator('.chip'));
+  await h.click(p.locator('.chip:has-text("XOR")'));
   await h.wait(1000);
   const net = h.obj('neural_network');
   await h.click(net.locator('button[title^="add a hidden layer"]'));

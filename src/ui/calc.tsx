@@ -451,7 +451,8 @@ export function CalcExperimentView({ o }: { o: TSObject }) {
   const results = s.results as { value: number; metrics: Record<string, number>; spread?: Record<string, number> }[];
   const reps = (s.reproductions ?? []) as { match: boolean }[];
   const focus = s.focus as string;
-  const keys = [focus, ...Object.keys(results[0]?.metrics ?? {}).filter((k) => k !== focus)].slice(0, 4);
+  // the measured metric first, then the most telling others (times are rarely interesting)
+  const keys = [focus, ...Object.keys(results[0]?.metrics ?? {}).filter((k) => k !== focus && !/^t_/.test(k))].slice(0, 4);
   const consts = Object.entries(s.constants as Record<string, number>);
   const w = o.visual.w - 20;
   return (

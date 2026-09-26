@@ -4,7 +4,7 @@ export default async function (h) {
   const { p } = h;
   await h.caption('Experiments: claims only count with evidence');
   await h.wait(1200);
-  await h.click(p.locator('.chip'));
+  await h.click(p.locator('.chip:has-text("XOR")'));
   await h.wait(1400);
 
   await h.caption('The AI states a claim — it starts UNVERIFIED');

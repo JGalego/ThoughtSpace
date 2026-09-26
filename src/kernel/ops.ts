@@ -25,7 +25,7 @@ import { datasetFor, labelOf, layersOf, netParams, points, relationsFrom, relati
 import { describeArchitecture } from './semantics';
 import { train } from './nn';
 import { CALC_EDITABLE, calcCreateArgs, calcExperimentSpec, calcPlotParams, checkCalcState, describeValue, linkNames, runCalcExperiment } from './ops-calc';
-import { isCalc } from './calc';
+import { isCalc, measure } from './calc';
 import { ExprError } from './expr';
 import { AI_SHAPES, boundaryWeights, classify, INK_COLORS, shapeStrokes, strokeBBox, type AIShape, type InkColor, type Stroke, type XY } from './ink';
 import { formatValue, METRICS, runExperiment, type Expectation, type ExperimentSpec } from './experiment';
@@ -1067,7 +1067,8 @@ const HANDLERS: Record<string, Handler> = {
         label: typeof op.label === 'string' ? op.label : `${A.label} vs ${B.label}`,
         params: {},
         state: { a, b },
-        visual: tx.allocate(sizeFor('comparison'), tx.placement(op.placement) ?? { below }),
+        // two live quantities need a line or two each, not room for two decision boundaries
+        visual: tx.allocate(isCalc(A) && isCalc(B) ? { w: 360, h: 110 + 18 * Math.min(12, calcRows(tx.ws, A)) } : sizeFor('comparison'), tx.placement(op.placement) ?? { below }),
         provenance: { derivedFrom: [a, b] },
       },
       'compare',
@@ -1247,6 +1248,12 @@ function calcExperiment(tx: TxBuilder, op: Operation, target: TSObject) {
   tx.marker('ExperimentCompleted', id, 'experiment', { supported: outcome.supported, hash: outcome.hash });
   tx.setRef(op.ref, id);
   tx.notes.push(`Experiment ${id}: ${outcome.conclusion} (results hash ${outcome.hash})`);
+}
+
+function calcRows(ws: Workspace, o: TSObject): number {
+  if (o.kind === 'variable') return 1;
+  const m = measure(ws, o);
+  return m.ok ? Object.keys(m.value).length : 1;
 }
 
 /** room for every equation, the outputs and a small preview of the run */

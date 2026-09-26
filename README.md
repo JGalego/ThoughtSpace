@@ -29,8 +29,143 @@ what's on the page.
 *Claude drives the UI; the in-app AI is OpenAI gpt-5.5. Waits on the model are sped up.
 More use cases are in [the gallery](#see-it-in-use) below.*
 
-This first prototype is about one domain, small neural networks, and one journey:
+It is also an **open, interactive canvas for teaching any subject**: you and the AI build
+the lesson live, in front of the class, out of sliders, live formulas, simulations, random
+trials, plots and predictions that an experiment can settle. See
+[Teaching with ThoughtSpace](#teaching-with-thoughtspace).
+
+The first domain it was built around is small neural networks, with one journey:
 *why does XOR need a hidden layer?*
+
+## Teaching with ThoughtSpace
+
+A lesson in ThoughtSpace is not a slide deck or a fixed simulation. It is an **open
+lesson**: a handful of generic building blocks that you, the AI and the class assemble and
+change live, in any subject.
+
+| Building block | What the class sees | What it is |
+|---|---|---|
+| **Variable** | a slider with a unit | a named quantity: `theta`, `R0`, `tax` |
+| **Formula** | a live, typeset equation | `R = v0^2*sin(2*rad(theta))/g`, recomputed as sliders move |
+| **System** | rate equations and their run | `dS/dt = -beta*S*I`, integrated over time, with a stop condition |
+| **Random trials** | a histogram and statistics | `M = meanof(n, randint(1, 6))`, repeated thousands of times, seeded |
+| **Plot** | a curve, time series, trajectory or histogram | drag along a curve to move its slider |
+| **Prediction** | a claim, *unverified* until tested | "R is largest when theta = 45" |
+| **Experiment** | a table, a chart and a verdict | vary one slider, freeze the rest, compute whether the prediction holds |
+| **What if** | a branch beside the original, compared | "what if k = 0.05" |
+
+Names link themselves: a formula that mentions `theta` is wired to the `theta` slider, and
+the arrows on the canvas are the dependency graph. Everything is computed by the kernel,
+deterministically, so the whole class sees the same numbers and every experiment reproduces.
+
+**The classroom loop** is *predict → play → test → change the conditions → test again*.
+Students commit to a prediction, move the sliders, test it with a controlled experiment,
+then change something the prediction quietly assumed (air drag, a more contagious
+disease, the slopes of a market) and watch the verdict flip.
+
+**Three ways to start a lesson:**
+
+1. **Ask the AI** for any topic: *"I teach chemistry. Build a lesson on radioactive decay
+   and half-life my students can play with."* It builds from the same building blocks and
+   leaves an untested prediction for the class. This needs a model (⚙: Claude, OpenAI or
+   any OpenAI-compatible server).
+2. **Type the mathematics**, even offline. `y = a*sin(b*x) + c` makes a slider for every
+   unknown, the live formula and its curve. `dN/dt = r*N*(1 - N/K); N(0) = 5` makes a
+   system, `X ~ randint(1,6) + randint(1,6)` makes random trials, and `a = 3` sets a
+   slider. Then write a prediction in words, like *"test: y increases as c increases"*,
+   *"test: R is largest when theta = 45"* or *"test: when vacc = 0.6, I_max is below
+   0.01"*, and it becomes an experiment. *"what if b = 4"* branches and compares, and
+   *"why"* measures which slider matters most right now.
+3. **Start from an example.** The empty canvas offers five ready-made lessons (physics,
+   epidemics, Fourier series, the central limit theorem, tax incidence). They are built
+   from the same primitives, so they're starting points to change, not finished apps.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Any subject, built live by the AI**<br/>
+No template: the in-app AI (OpenAI gpt-5.5) builds a half-life lesson from the building
+blocks. The class moves the sliders, and the prediction is tested by the kernel, not
+asserted by the model.
+
+![A half-life lesson built live by the in-app AI](docs/media/thoughtspace-lesson-ai.gif)
+
+</td>
+<td width="50%" valign="top">
+
+**Type the mathematics**<br/>
+`y = a*sin(b*x) + c` gets sliders, a live formula and a draggable curve. A prediction
+written in words becomes an experiment, and *what if* branches and compares. This works
+offline.
+
+![Typing mathematics into an open lesson](docs/media/thoughtspace-lesson-open.gif)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Physics: which angle throws furthest?**<br/>
+The range formula and a simulated flight with air drag. The class predicts 45° and an
+experiment agrees. Then they turn on drag, test again, and the claim is refuted.
+
+![Projectile lesson](docs/media/thoughtspace-lesson-physics.gif)
+
+</td>
+<td valign="top">
+
+**Biology: stopping an epidemic**<br/>
+An SIR model with vaccination. "60% is enough" holds for R₀ = 2.5. Raise R₀ to measles-like
+levels and the same prediction fails: the herd-immunity threshold is now 83%.
+
+![Epidemic lesson](docs/media/thoughtspace-lesson-epidemic.gif)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Maths: square waves from sines**<br/>
+Add Fourier terms and the corners sharpen, but the bump at the jump stays about 9% high.
+The natural prediction that enough terms remove it is refuted: the Gibbs phenomenon.
+
+![Fourier lesson](docs/media/thoughtspace-lesson-fourier.gif)
+
+</td>
+<td valign="top">
+
+**Statistics: why averages make bell curves**<br/>
+Seeded random trials of the average of n dice. Slide n and the flat distribution becomes
+a bell. 🎲 draws a fresh sample, and the spread follows σ/√n.
+
+![Central limit theorem lesson](docs/media/thoughtspace-lesson-statistics.gif)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Economics: who really pays a tax?**<br/>
+Sellers are charged the tax, so do sellers pay it? An experiment says buyers pay half. Make
+supply steeper and the less flexible side ends up paying more.
+
+![Tax incidence lesson](docs/media/thoughtspace-lesson-economics.gif)
+
+</td>
+<td valign="top">
+
+**The expression language**<br/>
+`+ - * / ^`, implicit multiplication (`2x`), comparisons and `c ? a : b`; `sin cos tan exp
+ln log sqrt abs min max floor round hypot clamp mod choose fact rad deg`; the constants `pi`
+and `e`; `sum(k, 1, n, …)`, `prod`, `integrate(x, a, b, …)`, `diff(x, at, …)`,
+`maxover/minover/argmax/argmin(x, a, b, …)`; and, for trials, `rand() randn() randint(a,b)
+coin(p) randexp(rate)` with `meanof(n, …)` and `sumof(n, …)`. It is parsed and evaluated by
+the kernel (no `eval`), with a step budget.
+
+</td>
+</tr>
+</table>
 
 ## Run it
 
@@ -190,8 +325,9 @@ AI sped up.
 
 ```bash
 npm run dev &
-node scripts/gifs/record.mjs all          # or: experiments branches glyphs zoom hands-on history ink demo
-MODEL=gpt-5.5 node scripts/gifs/record.mjs demo   # the journey GIF uses a real model (OPENAI_API_KEY on the dev server)
+node scripts/gifs/record.mjs experiments branches glyphs zoom hands-on history ink
+node scripts/gifs/record.mjs lesson-physics lesson-epidemic lesson-fourier lesson-statistics lesson-economics lesson-open
+MODEL=gpt-5.5 node scripts/gifs/record.mjs demo lesson-ai   # these use a real model (OPENAI_API_KEY on the dev server)
 ```
 
 ## Drawing
@@ -232,9 +368,14 @@ Claude agent ────┘     validate · compile      (seeded MLP training, 
   semantic operation protocol and its validation), `kernel.ts` (event-sourced history,
   branches, undo/redo, diff), `nn.ts` + `experiment.ts` (the deterministic executor),
   `layout.ts` (semantic placement → coordinates), `suggest.ts` (contextual noticers),
-  `formulas.ts` (live equations), `view.ts` (the semantic view the AI gets).
+  `formulas.ts` (live equations), `view.ts` (the semantic view the AI gets). The open-lesson
+  kinds live in `expr.ts` (the safe expression language), `calc.ts` (evaluation along the
+  dependency arrows: formulas, RK4 systems, seeded trials, sweeps) and `ops-calc.ts`
+  (creating, linking, plotting and experimenting on them).
 - `src/agent/`: clients of the kernel that share one host interface. `local.ts` is a
-  deterministic planner for the canonical vocabulary. `shared.ts` holds what every LLM
+  deterministic planner for the canonical vocabulary, and `lessons.ts` gives it the
+  open-lesson vocabulary (typed mathematics, predictions in words, what if, why) and the
+  ready-made lessons. `shared.ts` holds what every LLM
   participant shares: the system prompt, the three tools (`apply_operations`, `inspect`,
   `highlight`), and their execution, where kernel validation errors go back to the model as
   tool errors. `claude.ts` and `openai.ts` are thin provider loops over it.
@@ -258,6 +399,14 @@ every batch the model submitted and every rejection. The first runs against Open
   placement and metric synonyms. The protocol now accepts these unambiguous forms, and refs
   live for a whole agent turn. That took gpt-4.1 from failing the journey to 0 rejected
   batches.
+
+`tests/live/lessons.live.test.ts` asks a real model to build lessons in subjects it has no
+template for, and then to test a class's prediction. gpt-5.5 passes all four: radioactive
+decay, the pendulum (where it measured √2, not 2, for doubling the length), simple vs
+compound interest, and foxes and rabbits (Lotka–Volterra). Every first batch had been
+rejected only because the model invented a placement key for its opening note. Placement
+is only a layout hint, so the kernel now falls back to automatic layout and says so in the
+result.
 
 Any OpenAI-compatible server can run it too:
 

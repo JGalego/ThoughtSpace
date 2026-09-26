@@ -242,6 +242,33 @@ else becomes a `sketch` object that annotates what it was drawn over and moves w
 The AI draws only semantic shapes (`draw {shape, target, to?}`), and the kernel computes the
 strokes deterministically.
 
+### Open lessons: beyond one domain
+
+To teach any subject, the kernel gained four generic kinds instead of one per subject:
+`variable` (a slider), `formula` (a named expression), `system` (named variables with
+initial values and rates of change, with helpers and an optional stop condition,
+integrated by fixed-step RK4) and `trials` (an expression with random functions, repeated
+with a seed). Expressions use a small language (`expr.ts`) that is parsed and evaluated by
+the kernel, never by `eval`. It has lazy binding forms (`sum`, `integrate`, `diff`,
+`maxover`, `meanof`, …) and a step budget.
+
+**Names are wired by relations.** When a formula mentions `theta`, `create_object` links
+it with a `feeds_into` relation to the one visible object that provides `theta`,
+preferring objects made in the same batch. Ambiguity and cycles are errors, with the fix
+in the message (`inputs: {"theta": "var_2"}`). Evaluation resolves names only along those
+arrows, so the canvas *is* the dependency graph, and a branch copy of a slider feeds only
+the copies downstream of it.
+
+**Experiments generalise.** On a formula, system or trials, an experiment varies one
+variable, freezes every other variable behind the target at its current value (recorded as
+constants), averages seeds when anything upstream is random, and checks expectations
+against the target's outputs. Re-testing after a slider moved is a new experiment with
+new constants, so a claim can be supported under one set of conditions and refuted under
+another, and its evidence shows both.
+
+Ready-made lessons are only op batches over these primitives (`src/agent/lessons.ts`), and
+the offline planner and LLMs build new ones the same way.
+
 ## 8. Smallest feature set that makes the demo compelling
 
 Must-have (built):

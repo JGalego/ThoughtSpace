@@ -4,7 +4,7 @@ export default async function (h) {
   const { p } = h;
   await h.caption('Branches: explore alternatives, keep the history');
   await h.wait(1000);
-  await h.click(p.locator('.chip'));
+  await h.click(p.locator('.chip:has-text("XOR")'));
   await h.wait(1200);
 
   await h.caption('Give the neuron a hidden layer and train it');

@@ -80,7 +80,11 @@ export async function session({ out, model = 'offline', url = 'http://localhost:
       await p.waitForTimeout(250);
     },
     async hover(loc, ms = 900) {
-      const bb = await loc.boundingBox();
+      let bb = await loc.boundingBox();
+      if (!h.inView(bb)) {
+        await h.fit();
+        bb = await loc.boundingBox();
+      }
       await h.moveTo(bb.x + bb.width / 2, bb.y + bb.height / 2);
       await p.waitForTimeout(ms);
     },
@@ -102,6 +106,55 @@ export async function session({ out, model = 'offline', url = 'http://localhost:
       }
       await p.mouse.up();
     },
+    /** drag a variable's slider through a sequence of values, like a hand would */
+    async slide(obj, values, pause = 30) {
+      const input = obj.locator('input.slider');
+      let bb = await input.boundingBox();
+      if (!h.inView(bb)) {
+        await h.fit();
+        bb = await input.boundingBox();
+      }
+      const { min, max, value } = await input.evaluate((el) => ({ min: Number(el.min), max: Number(el.max), value: Number(el.value) }));
+      // the thumb sits inset by half its width at each end
+      const inset = 7;
+      const xOf = (v) => bb.x + inset + ((v - min) / (max - min)) * (bb.width - 2 * inset);
+      const y = bb.y + bb.height / 2;
+      let x = xOf(value);
+      await h.moveTo(x, y);
+      await p.mouse.down();
+      for (const v of values) {
+        const to = xOf(v);
+        const steps = Math.max(1, Math.round(Math.abs(to - x) / 4));
+        for (let i = 1; i <= steps; i++) {
+          await p.mouse.move(x + ((to - x) * i) / steps, y);
+          await p.waitForTimeout(pause);
+        }
+        x = to;
+        await p.waitForTimeout(250);
+      }
+      await p.mouse.up();
+      await p.waitForTimeout(300);
+    },
+    /** drag horizontally across an element through fractions of its width */
+    async dragAlong(loc, fracs, pause = 30) {
+      const bb = await loc.boundingBox();
+      const y = bb.y + bb.height * 0.55;
+      let x = bb.x + bb.width * fracs[0];
+      await h.moveTo(x, y);
+      await p.mouse.down();
+      for (const f of fracs.slice(1)) {
+        const to = bb.x + bb.width * f;
+        const steps = Math.max(1, Math.round(Math.abs(to - x) / 4));
+        for (let i = 1; i <= steps; i++) {
+          await p.mouse.move(x + ((to - x) * i) / steps, y);
+          await p.waitForTimeout(pause);
+        }
+        x = to;
+        await p.waitForTimeout(200);
+      }
+      await p.mouse.up();
+      await p.waitForTimeout(300);
+    },
     async draw(pts, pause = 1000) {
       await h.moveTo(pts[0][0], pts[0][1], 12);
       await p.mouse.down();
@@ -120,6 +173,12 @@ export async function session({ out, model = 'offline', url = 'http://localhost:
       await p.waitForSelector('.status', { state: 'attached', timeout: 5000 }).catch(() => {});
       await p.waitForSelector('.status', { state: 'detached', timeout: 600000 });
       await p.waitForTimeout(1600);
+    },
+    /** wait for the in-app AI to finish whatever it was asked (e.g. by a suggestion button) */
+    async idle(ms = 1600) {
+      await p.waitForSelector('.status', { state: 'attached', timeout: 5000 }).catch(() => {});
+      await p.waitForSelector('.status', { state: 'detached', timeout: 600000 });
+      await p.waitForTimeout(ms);
     },
     async key(k, ms = 250) {
       await p.keyboard.press(k);

@@ -5,7 +5,7 @@ export default async function (h) {
   const zb = (i) => p.locator('.zoombar button').nth(i);
   await h.caption('Semantic zoom: one object, many levels');
   await h.wait(1000);
-  await h.click(p.locator('.chip'));
+  await h.click(p.locator('.chip:has-text("XOR")'));
   await h.wait(1200);
 
   await h.caption('Zoom out: objects collapse to their essence');

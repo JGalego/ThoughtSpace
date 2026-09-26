@@ -4,7 +4,7 @@ export default async function (h) {
   const { p } = h;
   await h.caption('Hands on: the network is a living object');
   await h.wait(1000);
-  await h.click(p.locator('.chip'));
+  await h.click(p.locator('.chip:has-text("XOR")'));
   await h.wait(1200);
 
   await h.caption('Hover a data point: the network lights up with its activations');
